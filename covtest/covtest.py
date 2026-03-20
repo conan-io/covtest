@@ -33,9 +33,16 @@ def extract_coverage(folder):
     cov = coverage.CoverageData()
     with chdir(folder):
         cov.read()
+    print("FOLDER", folder)
     result = OrderedDict()
+
     for f in cov.measured_files():
+        print("FILE", f)
+        print("LINES", cov.lines(f))
+        print("ARCS", cov.arcs(f))
+        print("TRACER", cov.file_tracer(f))
         contexts = cov.contexts_by_lineno(f)
+        print(f, contexts)
         clean_contexts = {}  # for pytest
         for line, context in sorted(contexts.items()):
             # Cleaning multiple contexts from pytest-cov plugin

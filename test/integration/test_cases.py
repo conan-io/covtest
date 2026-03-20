@@ -95,8 +95,11 @@ def _run_case(case):
             stdout, _ = run_pytest(case_folder, env=test_def.get("env"), context=context)
             validate_tests(test_def, stdout)
 
+    logger.debug(f"\n\n\n---- RUNNING PYTEST FOR THE FIRST TIME -----------")
     _run_pytest()
 
+    logger.debug(f"\n\n\n---- DOING CODE CHANGES -----------")
     prepare_patch_diff(case_folder, case)
 
+    logger.debug(f"\n\n\n---- RUNNING PYTEST AGAIN, OPTIMIZED -----------")
     _run_pytest()

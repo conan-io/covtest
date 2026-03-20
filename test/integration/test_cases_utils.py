@@ -3,19 +3,12 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import textwrap
 import time
-from contextlib import redirect_stdout, redirect_stderr
-from io import StringIO
 
-import nose
-import coverage
-
-from covtest.util.run import run
-from covtest.nose_plugin import CovTestNosePlugin
 from covtest.util.files import chdir, save
+from covtest.util.run import run
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +22,7 @@ def prepare_folder(folder):
     dst = os.path.join(temp, "dst")
     shutil.copytree(folder, dst)
     # Do not diff our file
-    save(os.path.join(dst, ".gitignore"), "test.json\n.coverage\n.covtest\n.covtest/*")
+    save(os.path.join(dst, ".gitignore"), "test.json\n.coverage\n.covtest\n.covtest/*\n__pycache__")
     return dst
 
 
@@ -58,45 +51,6 @@ def add_noserc_plugin(folder):
     """)
     with open(os.path.join(folder, "setup.cfg"), "w") as f:
         f.write(coveragerc)
-
-
-def run_nose(folder, tests=None, failing=0):
-
-    os.chdir(folder)
-    if tests:
-        tests_path = " ".join(tests)
-    else:
-        tests_path = folder
-    old_modules = list(sys.modules.keys())
-    cov = coverage.Coverage(cover_pylib=False, source=[folder])
-    cov.start()
-    try:
-        logger.debug("Launching nose %s", tests_path)
-
-        stdout, stderr = StringIO(), StringIO()
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            plugin = CovTestNosePlugin(cov)
-            result = nose.run(addplugins=[plugin], argv=[os.path.abspath(__file__), tests_path,
-                                                         "--verbosity=3", "--nocapture"])
-        plugin.save_opened_files(folder)
-        stdout = stdout.getvalue()
-        stderr = stderr.getvalue()
-        # print("STD ", stdout, stderr)
-        logger.debug("Launched nose %s", tests_path)
-        if failing == 0:
-            if not result:
-                raise Exception("Unexpected error running nose: ", stdout, stderr)
-        else:
-            assert ("FAILED (failures=%s)" % failing) in stderr
-            if result:
-                raise Exception("Unexpected success running nose: ", stdout, stderr)
-    finally:
-        cov.stop()
-        cov.save()
-    added_modules = set(sys.modules).difference(old_modules)
-    for added in added_modules:
-        sys.modules.pop(added, None)
-    return stdout, stderr
 
 
 @contextlib.contextmanager
@@ -131,9 +85,9 @@ def run_pytest(folder, tests=None, collect_only=False, env=None, context=None):
     stdout = result.stdout.decode()
     stderr = result.stderr.decode()
 
-    logger.debug(textwrap.indent(stdout, "       "))
+    logger.debug("\n" + textwrap.indent(stdout, "       "))
     if stderr:
-        logger.debug(textwrap.indent(stderr, "       "))
+        logger.debug("\n" + textwrap.indent(stderr, "       "))
     logger.debug("+++++++ Finalized pytest %s", tests)
     logger.debug(f"+++++++ TIME: run_pytest {time.time() - t}")
     return stdout, stderr

@@ -1,0 +1,19 @@
+[
+  {
+    "name": "Windows",
+    "env": {"MY_COVTEST_OS":  "Windows"},
+    "pass": [
+      "mymath_test.py::MyMathTest::test_add"
+    ],
+    "fail": [
+    ]
+  },
+  {
+    "name": "Linux",
+    "env": {"MY_COVTEST_OS":  "Linux"},
+    "pass": [
+    ],
+    "fail": [
+    ]
+  }
+]

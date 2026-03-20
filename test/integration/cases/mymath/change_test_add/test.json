@@ -1,0 +1,7 @@
+{
+  "pass": [
+    "mymath_test.py::MyMathTest::test_add"
+  ],
+  "fail": [
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "pass": [
+  ],
+  "fail": [
+    "data_test.py::DataTest::test_cities"
+  ]
+}

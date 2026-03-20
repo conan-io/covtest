@@ -1,0 +1,184 @@
+import ast
+import logging
+import os
+
+from covtest.util.files import load
+
+logger = logging.getLogger(__name__)
+
+
+class ParsedData:
+    def __init__(self, folder):
+        self.files = {}
+        for root, dirs, files in os.walk(folder):
+            for f in files:
+                if not f.endswith(".py"):
+                    continue
+                absf = os.path.join(root, f)
+                relf = os.path.relpath(absf, folder).replace("\\", "/")
+                self.files[relf] = ParsedFileData(relf, load(absf))
+
+    def line_mappings(self):
+        result = {}
+        # print("-------------------LINE MAPPINGS---------------------------")
+        for file, parsed_data in self.files.items():
+            # print("PROCESSING FILE ", file)
+            file_mapping = {}
+            result[file] = file_mapping
+            for scope in parsed_data.scopes.values():
+                for line in scope[1:]:
+                    file_mapping[line] = {file: [scope[0]]}
+            for key, (sources, targets) in parsed_data.global_usages.items():
+                for line in sources:
+                    file_mapping.setdefault(line, {}).setdefault(file, []).extend(targets)
+
+            for import_name, lines in parsed_data.imports_usages.items():
+                # print("     Processing IMPORT=", import_name, lines)
+                sources, targets = lines
+                # print("     Sources", sources, targets)
+                #for line in sources:
+                #    file_mapping.setdefault(line, {}).setdefault(file, []).extend(targets)
+                # TODO: bad approximation, just look for the name in all files, and alias == name
+                for other_file, other_data in self.files.items():
+                    # print("         Other file", other_file)
+                    lines_found = other_data.global_declarations.get(import_name)
+                    # print("         Lines found", lines_found)
+                    if not lines_found:
+                        continue
+                    for line in sources:
+                        # print("            Adding mapping", line, "->", other_file, ":", lines_found)
+                        file_mapping.setdefault(line, {}).setdefault(other_file, []).extend(lines_found)
+                    global_usages = other_data.global_usages.get(import_name)
+                    if global_usages is None:
+                        # print("       No global usage of ")
+                        continue
+                    other_sources, other_targets = global_usages
+                    # print("         Found other global ", other_sources, other_targets)
+                    for line in sources:
+                        # print("           Adding glogal mapping", line, "->", other_file, ":", other_targets)
+                        file_mapping.setdefault(line, {}).setdefault(other_file, []).extend(other_targets)
+                        # repeat expansion of globals from targets
+                        for rec_key, (rec_sources, rec_targets) in other_data.global_usages.items():
+                            # print("           Recursing global usage ", rec_key, rec_sources, rec_targets)
+                            # print("           CHekcing if ", other_targets, "intersects", rec_sources)
+                            if set(other_targets).intersection(rec_sources):
+                                file_mapping.setdefault(line, {}).setdefault(other_file, []).extend(rec_targets)
+        return result
+
+
+class ParsedFileData:
+    """ results of parsing a code file
+    """
+    def __init__(self, file, code):
+        self.file = file
+        rootnode = ast.parse(code)
+        self.global_declarations = _parse_globals_defs(rootnode)
+        self.global_usages = _parse_usages(rootnode, self.global_declarations)
+        self.scopes = _parse_scopes(rootnode)
+        self.imports = _parse_imports(rootnode)
+        self.imports_usages = _parse_usages(rootnode, self.imports)
+
+
+def extract_tests(filename):
+    # Tests deduced by ast parsing
+    code = load(filename)
+    rootnode = ast.parse(code)
+    file_tests = []
+    bare_filename = os.path.basename(filename)
+    for child in ast.iter_child_nodes(rootnode):
+        if isinstance(child, ast.ClassDef):
+            for method_children in ast.iter_child_nodes(child):
+                if isinstance(method_children, ast.FunctionDef):
+                    file_tests.append("%s::%s::%s"
+                                      % (bare_filename, child.name, method_children.name))
+
+    return file_tests
+
+
+def _parse_globals_defs(rootnode):
+    result = {}
+    for child in ast.iter_child_nodes(rootnode):
+        if isinstance(child, ast.Assign):
+            for t in child.targets:
+                result[t.id] = list(range(child.lineno, child.end_lineno+1))
+        elif isinstance(child, (ast.Import, ast.ImportFrom)):
+            pass  # parsed in another place
+        else:
+            endlineno = child.lineno
+            for n in ast.iter_child_nodes(child):
+                try:
+                    endlineno = n.lineno
+                    break
+                except:
+                    pass
+            try:
+                result[child.name] = list(range(child.lineno, endlineno+1))
+            except Exception as e:
+                print("Couldn't parse global ", str(e))
+
+    return result
+
+
+def _parse_imports(rootnode):
+    result = {}
+    for child in ast.iter_child_nodes(rootnode):
+        if isinstance(child, (ast.Import, ast.ImportFrom)):
+            for alias in child.names:
+                result[alias.name] = list(range(child.lineno, child.end_lineno+1))
+
+    return result
+
+
+def _parse_usages(rootnode, defs):
+
+    class MyVisitor(ast.NodeVisitor):
+        names = {}
+
+        def generic_visit(self, node):
+            ast.NodeVisitor.generic_visit(self, node)
+
+        def visit_Name(self, node):
+            self.names.setdefault(node.id, set()).add(node.lineno)
+
+    visitor = MyVisitor()
+    visitor.visit(rootnode)
+    usage_names = visitor.names
+
+    result = {}
+    for d, lines in defs.items():
+        existing = usage_names.get(d)
+        if existing:
+            result[d] = (existing.difference(lines), lines)
+    return result
+
+
+def _parse_scopes(rootnode):
+    result = {}
+    for child in ast.iter_child_nodes(rootnode):
+        if isinstance(child, ast.ClassDef):
+            # # print("CLASS ELEM ", child, getattr(child, "lineno", None), getattr(child, "end_lineno", None))
+            result[child.name] = [lin for lin in range(child.lineno, child.end_lineno+1)]
+            for class_child in ast.iter_child_nodes(child):
+                first_lineno = getattr(class_child, "lineno", None)
+                if isinstance(class_child, ast.FunctionDef):
+                    # # print("     METHOD ELEM ", class_child, getattr(class_child, "lineno", None),
+                    #                                         getattr(class_child, "end_lineno", None))
+                    # # print("     METHOD DICT ", class_child.__dict__)
+                    #name=class_child.name, line=class_child.lineno, endline=class_child.end_lineno
+                    result[class_child.name] = [lin for lin in range(class_child.lineno, class_child.end_lineno + 1)]
+                    for body in ast.iter_child_nodes(class_child):
+                        first_lineno = getattr(body, "lineno", None)
+                else:
+                    pass
+                    # print(class_child, class_child.__dict__, class_child.lineno, class_child.end_lineno)
+        elif isinstance(child, ast.FunctionDef):
+            # print(child, child.__dict__, child.lineno, child.end_lineno
+            # name=child.name, line=child.lineno, endline=child.end_lineno
+            result[child.name] = [lin for lin in range(child.lineno, child.end_lineno + 1)]
+            for body in ast.iter_child_nodes(child):
+                first_lineno = getattr(body, "lineno", None)
+        else:
+            pass
+            # print(child)
+    return result
+

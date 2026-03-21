@@ -1,8 +1,8 @@
 import subprocess
 
 
-def run(cmd, ignore_error=False):
-    result = subprocess.run(cmd, capture_output=True)
+def run(cmd, ignore_error=False, cwd=None):
+    result = subprocess.run(cmd, capture_output=True, cwd=cwd)
     stdout = result.stdout.decode("utf-8")
     stderr = result.stderr.decode("utf-8")
 

@@ -54,7 +54,7 @@ def extract_coverage(folder):
     return result
 
 
-def suite_to_run(covdata, modified):
+def suite_to_run(covdata, modified, folder):
     """ compute which tests to run given the conandata and the
     modified files and lines
     """
@@ -79,6 +79,7 @@ def suite_to_run(covdata, modified):
                     result.add(t)
         # Now we need to check if modified lines are new tests
         if "test" in filename:
+            filename = os.path.join(folder, filename)
             parsed_tests = extract_tests(filename)
             # The previously existing tests run by this unit
             existing_tests = set()
@@ -166,5 +167,5 @@ def covtest_preprocess(folder, context):
     logger.debug(f"Modified lines\n{modified_lines}")
     # Make it absolute paths to match with the DB
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
-    tests = suite_to_run(covdata, modified_lines)
+    tests = suite_to_run(covdata, modified_lines, folder)
     return tests

@@ -32,4 +32,4 @@ def test_diff_folder():
         # --no-index return 1 if there are differences, and 0 if not
         out, err = run('git diff --no-index src fix_add', ignore_error=True)
     result = diff(out)
-    assert result == {'fix_add/mymath.py': [3], 'fix_add/test.json': [3]}
+    assert result == {'fix_add/mymath.py': [3], 'fix_add/test.json': []}

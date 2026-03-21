@@ -4,7 +4,9 @@ import os
 
 import pytest
 
+from covtest.covtest import covtest_preprocess
 from covtest.util.files import load
+from covtest.util.run import run
 from test.integration.test_cases_utils import prepare_folder, prepare_patch_diff, init_repo, \
     run_pytest, validate_tests
 
@@ -23,22 +25,60 @@ def collect_cases(group):
     return cases
 
 
+@pytest.fixture(scope="module")
+def prepare_case():
+    cached = {}
+
+    def case_generator(group):
+        try:
+            return cached[group]
+        except KeyError:
+            pass
+        cases_folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "cases", group))
+        cases_folder = str(cases_folder)  # to avoid warning because of bytes
+        src = os.path.join(cases_folder, "src")
+        case_folder = prepare_folder(src)  # copy files to a temporary test folder
+        init_repo(case_folder)  # git init
+
+        logger.debug(f"\n\n\n---- RUNNING PYTEST FOR THE FIRST TIME -----------")
+        # This does everything, run pytest with covtest plugin, parse code, stores DB
+        run_pytest(case_folder)
+
+        cached[group] = case_folder
+
+    return case_generator
+
+
+def change_and_predict(case, case_folder):
+    logger.debug(f"\n\n\n---- DOING CODE CHANGES -----------")
+    run("git checkout -- .", cwd=case_folder)
+    prepare_patch_diff(case_folder, case)
+
+    logger.debug(f"\n\n\n---- PREDICT TESTS -----------")
+    predicted_tests = covtest_preprocess(case_folder, None)
+    logger.debug(f"Predicted tests: {predicted_tests}")
+    tests_def = json.loads(load(os.path.join(case_folder, "test.json")))
+    assert predicted_tests == set(tests_def["tests"])
+
+
 @pytest.mark.parametrize("case", collect_cases("mymath"), ids=os.path.basename)
-def test_mymath(case):
+def test_mymath(prepare_case, case):
     """ test basic cases
     """
-    _run_case(case)
+    case_folder = prepare_case("mymath")
+    print(case_folder)
+    change_and_predict(case, case_folder)
 
 
 @pytest.mark.parametrize("case", collect_cases("files"), ids=os.path.basename)
-def test_files(case):
+def test_files(base_files, case):
     """ tests that file assests included in the test suite also fire tests if modified
     """
     _run_case(case)
 
 
 @pytest.mark.parametrize("case", collect_cases("globals"), ids=os.path.basename)
-def test_globals(case):
+def test_globals(base_globals, case):
     """ tests using global methods and variables
     """
     _run_case(case)
@@ -72,7 +112,7 @@ def test_developer_changes():
             stdout, _ = run_pytest(case_folder, env=test_def.get("env"), context=context)
             validate_tests(test_def, stdout)
 
-    _run_pytest()
+    run_pytest(case_folder)
 
     for case in cases:
         logger.debug(f"CASE: {case}")
@@ -86,20 +126,15 @@ def _run_case(case):
     case_folder = prepare_folder(src)  # copy files to a temporary test folder
     init_repo(case_folder)  # git init
 
-    def _run_pytest():
-        tests_def = json.loads(load(os.path.join(case_folder, "test.json")))
-        # It can contain 1 single definition, or a list of definitions, one per config, with name
-        tests_def = [tests_def] if not isinstance(tests_def, list) else tests_def
-        for test_def in tests_def:
-            context = test_def.get("name")
-            stdout, _ = run_pytest(case_folder, env=test_def.get("env"), context=context)
-            validate_tests(test_def, stdout)
-
     logger.debug(f"\n\n\n---- RUNNING PYTEST FOR THE FIRST TIME -----------")
-    _run_pytest()
+    # This does everything, run pytest with covtest plugin, parse code, stores DB
+    run_pytest(case_folder)
 
     logger.debug(f"\n\n\n---- DOING CODE CHANGES -----------")
     prepare_patch_diff(case_folder, case)
 
-    logger.debug(f"\n\n\n---- RUNNING PYTEST AGAIN, OPTIMIZED -----------")
-    _run_pytest()
+    logger.debug(f"\n\n\n---- PREDICT TESTS -----------")
+    predicted_tests = covtest_preprocess(case_folder, None)
+    logger.debug(f"Predicted tests: {predicted_tests}")
+    tests_def = json.loads(load(os.path.join(case_folder, "test.json")))
+    assert predicted_tests == set(tests_def["tests"])

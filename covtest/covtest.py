@@ -1,13 +1,14 @@
 import json
 import logging
 import os
+import subprocess
 import time
 from collections import OrderedDict
 
 import coverage
 
 from covtest.covtest_data import CovTestData
-from covtest.ast_parser import extract_tests, ParsedData
+from covtest.ast_parser import ParsedData
 from covtest.diff import diff
 from covtest.git import git_commits, git_diff, git_dirty
 from covtest.util.files import load, chdir
@@ -90,6 +91,16 @@ def suite_to_run(covdata, modified, folder):
                     result.add(file_test)
 
     return result
+
+
+def extract_tests(folder, filename):
+    # Tests deduced by pytest
+    result = subprocess.run(f"pytest {filename} --co -q",
+                            capture_output=True, text=True, cwd=folder)
+    stdout = result.stdout
+    file_tests = stdout.splitlines()
+    file_tests = file_tests[:file_tests.index("")]
+    return file_tests
 
 
 def covtest_postprocess(folder, context):

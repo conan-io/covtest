@@ -1,7 +1,6 @@
 import ast
 import logging
 import os
-import subprocess
 
 from covtest.util.files import load
 
@@ -78,16 +77,6 @@ class ParsedFileData:
         self.scopes = _parse_scopes(rootnode)
         self.imports = _parse_imports(rootnode)
         self.imports_usages = _parse_usages(rootnode, self.imports)
-
-
-def extract_tests(folder, filename):
-    # Tests deduced by pytest
-    result = subprocess.run(f"pytest {filename} --co -q",
-                            capture_output=True, text=True, cwd=folder)
-    stdout = result.stdout
-    file_tests = stdout.splitlines()
-    file_tests = file_tests[:file_tests.index("")]
-    return file_tests
 
 
 def _parse_globals_defs(rootnode):

@@ -99,22 +99,3 @@ def test_contexts(case):
     """
     """
     pass
-
-
-def _run_case(case):
-    src = os.path.join(os.path.dirname(case), "src")
-    case_folder = prepare_folder(src)  # copy files to a temporary test folder
-    init_repo(case_folder)  # git init
-
-    logger.debug(f"\n\n\n---- RUNNING PYTEST FOR THE FIRST TIME -----------")
-    # This does everything, run pytest with covtest plugin, parse code, stores DB
-    run_pytest(case_folder)
-
-    logger.debug(f"\n\n\n---- DOING CODE CHANGES -----------")
-    prepare_patch_diff(case_folder, case)
-
-    logger.debug(f"\n\n\n---- PREDICT TESTS -----------")
-    predicted_tests = covtest_preprocess(case_folder, None)
-    logger.debug(f"Predicted tests: {predicted_tests}")
-    tests_def = json.loads(load(os.path.join(case_folder, "test.json")))
-    assert predicted_tests == set(tests_def["tests"])

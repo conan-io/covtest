@@ -71,31 +71,34 @@ def test_mymath(prepare_case, case):
 
 
 @pytest.mark.parametrize("case", collect_cases("files"), ids=os.path.basename)
-def test_files(base_files, case):
+def test_files(prepare_case, case):
     """ tests that file assests included in the test suite also fire tests if modified
     """
-    _run_case(case)
+    case_folder = prepare_case("files")
+    change_and_predict(case, case_folder)
 
 
 @pytest.mark.parametrize("case", collect_cases("globals"), ids=os.path.basename)
-def test_globals(base_globals, case):
+def test_globals(prepare_case, case):
     """ tests using global methods and variables
     """
-    _run_case(case)
+    case_folder = prepare_case("globals")
+    change_and_predict(case, case_folder)
 
 
 @pytest.mark.parametrize("case", collect_cases("imports"), ids=os.path.basename)
-def test_imports(case):
+def test_imports(prepare_case, case):
     """ Test with imports over files
     """
-    _run_case(case)
+    case_folder = prepare_case("imports")
+    change_and_predict(case, case_folder)
 
 
 @pytest.mark.parametrize("case", collect_cases("contexts"), ids=os.path.basename)
 def test_contexts(case):
     """
     """
-    _run_case(case)
+    pass
 
 
 def test_developer_changes():

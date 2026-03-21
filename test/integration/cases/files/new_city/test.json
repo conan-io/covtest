@@ -1,7 +1,5 @@
 {
-  "pass": [
-  ],
-  "fail": [
+  "tests": [
     "data_test.py::DataTest::test_cities"
   ]
 }

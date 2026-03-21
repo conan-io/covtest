@@ -45,6 +45,7 @@ def prepare_case():
         run_pytest(case_folder)
 
         cached[group] = case_folder
+        return case_folder
 
     return case_generator
 
@@ -66,7 +67,6 @@ def test_mymath(prepare_case, case):
     """ test basic cases
     """
     case_folder = prepare_case("mymath")
-    print(case_folder)
     change_and_predict(case, case_folder)
 
 

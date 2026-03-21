@@ -1,8 +1,5 @@
 {
-  "pass": [
+  "tests": [
     "mymath_test.py::MyMathTest::test_other_add"
-  ],
-  "fail": [
-
   ]
 }

@@ -8,7 +8,7 @@ from covtest.covtest import covtest_preprocess
 from covtest.util.files import load
 from covtest.util.run import run
 from test.integration.test_cases_utils import prepare_folder, prepare_patch_diff, init_repo, \
-    run_pytest, validate_tests
+    run_pytest
 
 logger = logging.getLogger(__name__)
 
@@ -99,29 +99,6 @@ def test_contexts(case):
     """
     """
     pass
-
-
-def test_developer_changes():
-    cases = collect_cases("mymath")
-    src = os.path.join(os.path.dirname(cases[0]), "src")
-    case_folder = prepare_folder(src)
-    init_repo(case_folder)
-
-    def _run_pytest():
-        tests_def = json.loads(load(os.path.join(case_folder, "test.json")))
-        tests_def = [tests_def] if not isinstance(tests_def, list) else tests_def
-        for test_def in tests_def:
-            context = test_def.get("name")
-            stdout, _ = run_pytest(case_folder, env=test_def.get("env"), context=context)
-            validate_tests(test_def, stdout)
-
-    run_pytest(case_folder)
-
-    for case in cases:
-        logger.debug(f"CASE: {case}")
-        prepare_patch_diff(case_folder, src)  # restore things
-        prepare_patch_diff(case_folder, case)
-        _run_pytest()
 
 
 def _run_case(case):

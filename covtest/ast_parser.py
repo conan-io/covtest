@@ -1,6 +1,7 @@
 import ast
 import logging
 import os
+import subprocess
 
 from covtest.util.files import load
 
@@ -79,19 +80,13 @@ class ParsedFileData:
         self.imports_usages = _parse_usages(rootnode, self.imports)
 
 
-def extract_tests(filename):
-    # Tests deduced by ast parsing
-    code = load(filename)
-    rootnode = ast.parse(code)
-    file_tests = []
-    bare_filename = os.path.basename(filename)
-    for child in ast.iter_child_nodes(rootnode):
-        if isinstance(child, ast.ClassDef):
-            for method_children in ast.iter_child_nodes(child):
-                if isinstance(method_children, ast.FunctionDef):
-                    file_tests.append("%s::%s::%s"
-                                      % (bare_filename, child.name, method_children.name))
-
+def extract_tests(folder, filename):
+    # Tests deduced by pytest
+    result = subprocess.run(f"pytest {filename} --co -q",
+                            capture_output=True, text=True, cwd=folder)
+    stdout = result.stdout
+    file_tests = stdout.splitlines()
+    file_tests = file_tests[:file_tests.index("")]
     return file_tests
 
 

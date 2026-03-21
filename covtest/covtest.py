@@ -79,8 +79,7 @@ def suite_to_run(covdata, modified, folder):
                     result.add(t)
         # Now we need to check if modified lines are new tests
         if "test" in filename:
-            filename = os.path.join(folder, filename)
-            parsed_tests = extract_tests(filename)
+            parsed_tests = extract_tests(folder, filename)
             # The previously existing tests run by this unit
             existing_tests = set()
             for v in m.values():

@@ -46,20 +46,15 @@ class CovTestData:
         # First pass, complete
 
         def _extend_global_usages(test_data_, parsed_file_data_):
-            print("   PARSED ", parsed_file_data_.global_usages)
             for name, lines in parsed_file_data_.global_usages.items():
-                print("    GLOBAL USAGES", name, lines)
                 tests_from_usages = set()
                 for lin_ in lines:
-                    print("      GATHERING FROM LINE", lin_, test_data_[lin_])
                     tests_from_usages.update(test_data[lin_])
-                print("    TESTS FROM USAGES", tests_from_usages)
                 defined_lines = parsed_file_data_.global_definitions.get(name)
-                print("    DEFINED IN LINES", defined_lines)
                 if defined_lines:  # The whole scope of definition
                     for defined_line in defined_lines:
                         tests_ = test_data_[defined_line]
-                        tests_.extend(t for t in tests_from_usages if t not in tests)
+                        tests_.extend(t for t in tests_from_usages if t not in tests_)
 
         for file, test_data in self.py_files.items():
             # print("Extending mappings for", file)
@@ -75,7 +70,6 @@ class CovTestData:
                 for lin in range(line, endline+1):
                     lin_tests = test_data.get(lin, [])
                     tests.extend(t for t in lin_tests if t not in tests)
-                #print("   Line", line, "extended to", tests)
 
             _extend_global_usages(test_data, parsed_file_data)
 
@@ -86,29 +80,29 @@ class CovTestData:
                 usage_lines = parsed_file_data.imports_usages.get(import_name)
                 if not usage_lines:
                     continue  # This import seems unused in this file
+                import_tests = set()
                 for usage_line in usage_lines:
                     lin_tests = test_data.get(usage_line)
                     if lin_tests:
-                        for import_declared_line in import_declared_lines:
-                            tests = test_data[import_declared_line]
-                            tests.extend(t for t in lin_tests if t not in tests)
+                        import_tests.update(lin_tests)
+                if import_tests:
+                    for import_declared_line in import_declared_lines:
+                        tests = test_data[import_declared_line]
+                        tests.extend(t for t in import_tests if t not in tests)
 
                 # Project this import mappings into other files, the ones imported from
-                # print("   Project imports")
                 # Brute force, search in every other file for this name
                 for other_file, other_test_data in self.py_files.items():
+                    if other_file == file:
+                        continue
                     other_parsed_file_data = parse_data.files[other_file]
                     for global_def, global_def_lines in other_parsed_file_data.global_definitions.items():
-                        # print("        OTher file", other_file, global_def, global_def_lines)
                         if import_name == global_def:
                             for other_line in global_def_lines:  # Found match
-                                # FIXME: Avoid duplicates
-                                other_test_data.setdefault(other_line, []).extend(tests)
+                                other_test_data.setdefault(other_line, []).extend(import_tests)
 
         # Second pass, complete with global objects usages
-        print("_-------------SECOND-PASS_----------------------------")
         for file, test_data in self.py_files.items():
-            print("Extending mappings objects usages", file)
             parsed_file_data = parse_data.files[file]
             _extend_global_usages(test_data, parsed_file_data)
 

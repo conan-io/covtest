@@ -19,11 +19,7 @@ class CovTestData:
         result = CovTestData()
         result.py_files = coverage_data
         result.last_failed = last_failed
-        result.extend_mappings(parse_data)
-        # clean ducplicated and empty
-        for f, mapping in result.py_files.items():
-            for line, tests in mapping.items():
-                tests[:] = [t for t in set(tests) if t]
+        result.extend_mappings2(parse_data)
 
         for item in opened_files or []:
             test, file = item
@@ -45,6 +41,18 @@ class CovTestData:
                         continue
                     for target_line in target_lines:
                         target_cov_file.setdefault(target_line, set()).extend(original_tests)
+
+    def extend_mappings2(self, parse_data):
+        for file, test_data in self.py_files.items():
+            parsed_file_data = parse_data.files[file]
+            for line, tests in test_data.items():
+                if tests:
+                    continue
+                # Only if this line is covered but no tests assigned
+                endline = parsed_file_data.scopes.get(line)
+                for lin in range(line, endline+1):
+                    lin_tests = test_data.get(lin, [])
+                    tests.extend(t for t in lin_tests if t not in tests)
 
     def save(self, folder):
         p = os.path.join(folder, CovTestData.FILENAME)

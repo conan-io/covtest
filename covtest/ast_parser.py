@@ -16,7 +16,7 @@ class ParsedData:
                     continue
                 absf = os.path.join(root, f)
                 relf = os.path.relpath(absf, folder).replace("\\", "/")
-                self.files[relf] = ParsedFileData(relf, load(absf))
+                self.files[relf] = ParsedFileData(load(absf))
 
     def line_mappings(self):
         result = {}
@@ -69,9 +69,15 @@ class ParsedData:
 class ParsedFileData:
     """ results of parsing a code file
     """
-    def __init__(self, file, code):
-        self.file = file
+    def __init__(self, code):
         rootnode = ast.parse(code)
+        self.scopes = {}
+        for node in ast.walk(rootnode):
+            start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
+            if start is not None:
+                self.scopes[start] = max(end, self.scopes.get(start, 0))
+
+        return
         self.global_declarations = _parse_globals_defs(rootnode)
         self.global_usages = _parse_usages(rootnode, self.global_declarations)
         self.scopes = _parse_scopes(rootnode)

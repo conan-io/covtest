@@ -3,7 +3,6 @@ import logging
 import os
 import subprocess
 import time
-from collections import OrderedDict
 
 import coverage
 
@@ -35,7 +34,7 @@ def extract_coverage(folder):
     with chdir(folder):
         cov.read()
     # print("FOLDER", folder)
-    result = OrderedDict()
+    result = {}
 
     for f in cov.measured_files():
         """print("FILE", f)
@@ -116,7 +115,7 @@ def covtest_postprocess(folder, context):
     cov_data = extract_coverage(folder)
     logger.debug(f"Coverage results:\n{str_nested_dict(cov_data)}")
     parse_results = ParsedData(folder)
-    logger.debug(f"Parse results mappings:\n{str_nested_dict(parse_results.line_mappings())}")
+    # logger.debug(f"Parse results mappings:\n{str_nested_dict(parse_results.line_mappings())}")
     last_failed_file = os.path.join(folder, ".pytest_cache", "v", "cache", "lastfailed")
     last_failed = None
     if os.path.exists(last_failed_file):

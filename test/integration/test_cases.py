@@ -70,6 +70,14 @@ def test_mymath(prepare_case, case):
     change_and_predict(case, case_folder)
 
 
+@pytest.mark.parametrize("case", collect_cases("structs"), ids=os.path.basename)
+def test_structs(prepare_case, case):
+    """ test advanced cases
+    """
+    case_folder = prepare_case("structs")
+    change_and_predict(case, case_folder)
+
+
 @pytest.mark.parametrize("case", collect_cases("files"), ids=os.path.basename)
 def test_files(prepare_case, case):
     """ tests that file assests included in the test suite also fire tests if modified

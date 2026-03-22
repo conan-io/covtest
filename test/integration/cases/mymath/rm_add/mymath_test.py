@@ -1,5 +1,5 @@
 import unittest
-from mymath import mult
+from mymath import mult  # Modify import, better test mult too
 
 
 class MyMathTest(unittest.TestCase):

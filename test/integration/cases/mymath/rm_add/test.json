@@ -1,5 +1,6 @@
 {
   "tests": [
-      "mymath_test.py::MyMathTest::test_add"
+      "mymath_test.py::MyMathTest::test_add",
+      "mymath_test.py::MyMathTest::test_mult"
   ]
 }

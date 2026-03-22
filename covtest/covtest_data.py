@@ -54,6 +54,18 @@ class CovTestData:
                     lin_tests = test_data.get(lin, [])
                     tests.extend(t for t in lin_tests if t not in tests)
 
+                import_names = parsed_file_data.imports.get(line)
+                for import_name in import_names or []:
+                    usage_lines = parsed_file_data.imports_usages.get(import_name)
+                    if usage_lines:
+                        for usage_line in usage_lines:
+                            lin_tests = test_data.get(usage_line, [])
+                            tests.extend(t for t in lin_tests if t not in tests)
+
+            print("FILE", file)
+            print("    IMPORTS", parsed_file_data.imports)
+            print("    IMPORTSUSAGES", parsed_file_data.imports_usages)
+
     def save(self, folder):
         p = os.path.join(folder, CovTestData.FILENAME)
         data_files = {path: list(tests) for path, tests in self.data_files.items()}

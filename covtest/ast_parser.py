@@ -77,12 +77,13 @@ class ParsedFileData:
             if start is not None:
                 self.scopes[start] = max(end, self.scopes.get(start, 0))
 
+        self.imports = _parse_imports(rootnode)
+        self.imports_usages = _parse_usages(rootnode, self.imports)
+
         return
         self.global_declarations = _parse_globals_defs(rootnode)
         self.global_usages = _parse_usages(rootnode, self.global_declarations)
         self.scopes = _parse_scopes(rootnode)
-        self.imports = _parse_imports(rootnode)
-        self.imports_usages = _parse_usages(rootnode, self.imports)
 
 
 def _parse_globals_defs(rootnode):
@@ -114,8 +115,9 @@ def _parse_imports(rootnode):
     for child in ast.iter_child_nodes(rootnode):
         if isinstance(child, (ast.Import, ast.ImportFrom)):
             for alias in child.names:
-                result[alias.name] = list(range(child.lineno, child.end_lineno+1))
-
+                for lin in range(child.lineno, child.end_lineno+1):
+                    result.setdefault(lin, []).append(alias.name)
+    print("Result", result)
     return result
 
 
@@ -133,12 +135,14 @@ def _parse_usages(rootnode, defs):
     visitor = MyVisitor()
     visitor.visit(rootnode)
     usage_names = visitor.names
+    print("USAGE NAMES", usage_names)
 
     result = {}
-    for d, lines in defs.items():
-        existing = usage_names.get(d)
-        if existing:
-            result[d] = (existing.difference(lines), lines)
+    for line, names in defs.items():
+        for name in names:
+            existing = usage_names.get(name)
+            if existing:
+                result[name] = existing
     return result
 
 

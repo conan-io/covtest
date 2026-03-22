@@ -12,13 +12,17 @@ def run_covtest(cmd):
     if isinstance(cmd, str):
         cmd = cmd.split(" ")
 
-    log_capture_string = io.StringIO()
-    ch = logging.StreamHandler(log_capture_string)
-    ch.setLevel(logging.INFO)
+    # Get the ROOT logger (no name)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    log_buffer = io.StringIO()
+    handler = logging.StreamHandler(log_buffer)
+    root_logger.handlers = []
+    root_logger.addHandler(handler)
 
     result = main(cmd)
 
-    return result, log_capture_string.getvalue()
+    return result, log_buffer.getvalue()
 
 
 def test_dev_ux():
@@ -29,13 +33,10 @@ def test_dev_ux():
     out, err = run("pytest --cov=. --cov-context=test", cwd=src_folder)
     # print(out)
     assert "2 passed" in out
-    # out, err = run("covtest process . ")
+
     _, out = run_covtest("process .")
-    # assert "Processing coverage data" in out
-    #assert "Processing done" in out
-    print("----------------")
-    print(out)
-    print("+++++++++++++++++")
+    assert "Processing coverage data" in out
+    assert "Processing done" in out
 
     do_code_changes(src_folder, "mymath/fix_add")
 

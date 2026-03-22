@@ -1,3 +1,4 @@
 .idea
 __pycache__
 covtest.egg-info
+.pytest_cache

@@ -1,8 +1,5 @@
 import ast
 
-from covtest.ast_parser import ParsedData, ParsedFileData
-from covtest.covtest import str_nested_dict
-
 src = """\
 import os
 

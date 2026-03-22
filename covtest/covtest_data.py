@@ -19,30 +19,14 @@ class CovTestData:
         result = CovTestData()
         result.py_files = coverage_data
         result.last_failed = last_failed
-        result.extend_mappings2(parse_data)
+        result._extend_mappings(parse_data)
 
         for item in opened_files or []:
             test, file = item
             result.data_files.setdefault(file.replace("\\", "/"), []).append(test)
         return result
 
-    def extend_mappings(self, parse_data):
-        for file, parsed_file_data in parse_data.line_mappings().items():
-            cov_file = self.py_files.get(file)
-            if not cov_file:
-                continue  # If there is no test data for this fil
-            for line, target in parsed_file_data.items():
-                original_tests = cov_file.get(line)
-                if not original_tests:
-                    continue
-                for target_file, target_lines in target.items():
-                    target_cov_file = self.py_files.get(target_file)
-                    if not target_cov_file:
-                        continue
-                    for target_line in target_lines:
-                        target_cov_file.setdefault(target_line, set()).extend(original_tests)
-
-    def extend_mappings2(self, parse_data):
+    def _extend_mappings(self, parse_data):
         # First pass, complete
 
         def _extend_global_usages(test_data_, parsed_file_data_):

@@ -16,10 +16,10 @@ class ParsedData:
                     continue
                 absf = os.path.join(root, f)
                 relf = os.path.relpath(absf, folder).replace("\\", "/")
-                self.files[relf] = ParsedFileData(load(absf))
+                self.files[relf] = _ParsedFileData(load(absf))
 
 
-class ParsedFileData:
+class _ParsedFileData:
     """ results of parsing a code file
     """
     def __init__(self, code):

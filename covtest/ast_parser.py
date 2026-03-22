@@ -71,7 +71,7 @@ class ParsedFileData:
     """
     def __init__(self, code):
         rootnode = ast.parse(code)
-        self.scopes = {}
+        self.scopes = {}  # Mapping from line to the end line of the current scope (class, function)
         for node in ast.walk(rootnode):
             start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
             if start is not None:
@@ -79,11 +79,8 @@ class ParsedFileData:
 
         self.imports = _parse_imports(rootnode)
         self.imports_usages = _parse_usages(rootnode, self.imports)
-
-        return
-        self.global_declarations = _parse_globals_defs(rootnode)
-        self.global_usages = _parse_usages(rootnode, self.global_declarations)
-        self.scopes = _parse_scopes(rootnode)
+        self.global_definitions = _parse_globals_defs(rootnode)
+        self.global_usages = _parse_usages(rootnode, self.global_definitions)
 
 
 def _parse_globals_defs(rootnode):
@@ -111,13 +108,13 @@ def _parse_globals_defs(rootnode):
 
 
 def _parse_imports(rootnode):
+    # TODO: Check what happens with nested imports and try-except imports
     result = {}
     for child in ast.iter_child_nodes(rootnode):
         if isinstance(child, (ast.Import, ast.ImportFrom)):
             for alias in child.names:
-                for lin in range(child.lineno, child.end_lineno+1):
-                    result.setdefault(lin, []).append(alias.name)
-    print("Result", result)
+                for line in range(child.lineno, child.end_lineno+1):
+                    result.setdefault(alias.name, []).append(line)
     return result
 
 
@@ -135,44 +132,11 @@ def _parse_usages(rootnode, defs):
     visitor = MyVisitor()
     visitor.visit(rootnode)
     usage_names = visitor.names
-    print("USAGE NAMES", usage_names)
 
     result = {}
-    for line, names in defs.items():
-        for name in names:
-            existing = usage_names.get(name)
-            if existing:
-                result[name] = existing
+    for name, lines in defs.items():
+        existing = usage_names.get(name)
+        if existing:
+            # FIXME: This existing might be broken, might need to accumulate
+            result[name] = existing
     return result
-
-
-def _parse_scopes(rootnode):
-    result = {}
-    for child in ast.iter_child_nodes(rootnode):
-        if isinstance(child, ast.ClassDef):
-            # # print("CLASS ELEM ", child, getattr(child, "lineno", None), getattr(child, "end_lineno", None))
-            result[child.name] = [lin for lin in range(child.lineno, child.end_lineno+1)]
-            for class_child in ast.iter_child_nodes(child):
-                first_lineno = getattr(class_child, "lineno", None)
-                if isinstance(class_child, ast.FunctionDef):
-                    # # print("     METHOD ELEM ", class_child, getattr(class_child, "lineno", None),
-                    #                                         getattr(class_child, "end_lineno", None))
-                    # # print("     METHOD DICT ", class_child.__dict__)
-                    #name=class_child.name, line=class_child.lineno, endline=class_child.end_lineno
-                    result[class_child.name] = [lin for lin in range(class_child.lineno, class_child.end_lineno + 1)]
-                    for body in ast.iter_child_nodes(class_child):
-                        first_lineno = getattr(body, "lineno", None)
-                else:
-                    pass
-                    # print(class_child, class_child.__dict__, class_child.lineno, class_child.end_lineno)
-        elif isinstance(child, ast.FunctionDef):
-            # print(child, child.__dict__, child.lineno, child.end_lineno
-            # name=child.name, line=child.lineno, endline=child.end_lineno
-            result[child.name] = [lin for lin in range(child.lineno, child.end_lineno + 1)]
-            for body in ast.iter_child_nodes(child):
-                first_lineno = getattr(body, "lineno", None)
-        else:
-            pass
-            # print(child)
-    return result
-

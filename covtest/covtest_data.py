@@ -38,7 +38,7 @@ class CovTestData:
                 if defined_lines:  # The whole scope of definition
                     for defined_line in defined_lines:
                         tests_ = test_data_[defined_line]
-                        tests_.extend(t for t in tests_from_usages if t not in tests_)
+                        tests_.update(tests_from_usages)
 
         for file, test_data in self.py_files.items():
             # print("Extending mappings for", file)
@@ -53,7 +53,7 @@ class CovTestData:
                 endline = parsed_file_data.scopes.get(line)
                 for lin in range(line, endline+1):
                     lin_tests = test_data.get(lin, [])
-                    tests.extend(t for t in lin_tests if t not in tests)
+                    tests.update(lin_tests)
 
             _extend_global_usages(test_data, parsed_file_data)
 
@@ -72,7 +72,7 @@ class CovTestData:
                 if import_tests:
                     for import_declared_line in import_declared_lines:
                         tests = test_data[import_declared_line]
-                        tests.extend(t for t in import_tests if t not in tests)
+                        tests.update(import_tests)
 
                 # Project this import mappings into other files, the ones imported from
                 # Brute force, search in every other file for this name
@@ -83,7 +83,7 @@ class CovTestData:
                     for global_def, global_def_lines in other_parsed_file_data.global_definitions.items():
                         if import_name == global_def:
                             for other_line in global_def_lines:  # Found match
-                                other_test_data.setdefault(other_line, []).extend(import_tests)
+                                other_test_data.setdefault(other_line, set()).update(import_tests)
 
         # Second pass, complete with global objects usages
         for file, test_data in self.py_files.items():
@@ -93,8 +93,11 @@ class CovTestData:
     def save(self, folder):
         p = os.path.join(folder, CovTestData.FILENAME)
         data_files = {path: list(tests) for path, tests in self.data_files.items()}
+        pyfiles = {f: {lines: list(tests) for lines, tests in test_data.items()}
+                   for f, test_data in self.py_files.items()}
+
         result = {"data_files": data_files,
-                  "py_files": self.py_files,
+                  "py_files": pyfiles,
                   "last_failed": self.last_failed}
         save(p, json.dumps(result))
 
@@ -106,6 +109,7 @@ class CovTestData:
         content = load(p)
         data = json.loads(content)
         data_files = {k: set(v) for k, v in data["data_files"].items()}
-        py_files = {k: {int(line): v for line, v in lines.items()} for k, lines in data["py_files"].items()}
+        py_files = {filename: {int(line): set(tests) for line, tests in lines.items()}
+                    for filename, lines in data["py_files"].items()}
         last_failed = data["last_failed"]
         return CovTestData(data_files=data_files, py_files=py_files, last_failed=last_failed)

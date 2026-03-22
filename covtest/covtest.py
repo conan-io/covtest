@@ -37,10 +37,6 @@ def extract_coverage(folder):
     result = {}
 
     for f in cov.measured_files():
-        """print("FILE", f)
-        print("LINES", cov.lines(f))
-        print("ARCS", cov.arcs(f))
-        print("TRACER", cov.file_tracer(f))"""
         contexts = cov.contexts_by_lineno(f)
         # print(f, contexts)
         clean_contexts = {}  # for pytest
@@ -48,7 +44,7 @@ def extract_coverage(folder):
             # Cleaning multiple contexts from pytest-cov plugin
             clean = [c.split("|")[0] for c in context]
             clean = [c for c in clean if c]
-            clean_contexts[line] = clean
+            clean_contexts[line] = set(clean)
         f = os.path.relpath(f, folder)
         result[f.replace("\\", "/")] = clean_contexts
     return result

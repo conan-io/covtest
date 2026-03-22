@@ -136,7 +136,7 @@ def covtest_postprocess(folder, context):
         return
 
     covtest_folder = os.path.join(folder, COVTEST_FOLDER, base_commit, str(context))
-    logger.debug(f"Covtest storing data in folder: {covtest_folder}")
+    logger.info(f"Covtest storing data in folder: {covtest_folder}")
     cov_test_data.save(covtest_folder)
     logger.debug(f"TIME: covtest_post_process {time.time() - t}")
 

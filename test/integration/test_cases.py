@@ -1,13 +1,11 @@
-import json
 import logging
 import os
 
 import pytest
 
 from covtest.covtest import covtest_preprocess
-from covtest.util.files import load
 from covtest.util.run import run
-from test.integration.test_cases_utils import prepare_folder, prepare_patch_diff, init_repo, \
+from test.integration.test_cases_utils import prepare_src_folder, do_code_changes, git_init_repo, \
     run_pytest
 
 logger = logging.getLogger(__name__)
@@ -34,11 +32,8 @@ def prepare_case():
             return cached[group]
         except KeyError:
             pass
-        cases_folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "cases", group))
-        cases_folder = str(cases_folder)  # to avoid warning because of bytes
-        src = os.path.join(cases_folder, "src")
-        case_folder = prepare_folder(src)  # copy files to a temporary test folder
-        init_repo(case_folder)  # git init
+        case_folder = prepare_src_folder(group)  # copy files to a temporary test folder
+        git_init_repo(case_folder)  # git init
 
         logger.debug(f"\n\n\n---- RUNNING PYTEST FOR THE FIRST TIME -----------")
         # This does everything, run pytest with covtest plugin, parse code, stores DB
@@ -53,13 +48,12 @@ def prepare_case():
 def change_and_predict(case, case_folder):
     logger.debug(f"\n\n\n---- DOING CODE CHANGES -----------")
     run("git checkout -- .", cwd=case_folder)
-    prepare_patch_diff(case_folder, case)
+    expected_tests = do_code_changes(case_folder, case)
 
     logger.debug(f"\n\n\n---- PREDICT TESTS -----------")
     predicted_tests = covtest_preprocess(case_folder, None)
     logger.debug(f"Predicted tests: {predicted_tests}")
-    tests_def = json.loads(load(os.path.join(case_folder, "test.json")))
-    assert predicted_tests == set(tests_def["tests"])
+    assert predicted_tests == expected_tests
 
 
 @pytest.mark.parametrize("case", collect_cases("mymath"), ids=os.path.basename)

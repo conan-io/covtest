@@ -1,4 +1,5 @@
 import contextlib
+import json
 import logging
 import os
 import shutil
@@ -7,26 +8,27 @@ import tempfile
 import textwrap
 import time
 
-from covtest.util.files import chdir, save
+from covtest.util.files import chdir, save, load
 from covtest.util.run import run
 
 logger = logging.getLogger(__name__)
 
 
-def prepare_folder(folder):
+def prepare_src_folder(folder):
     """ copy the assets "folder" date into a temporary testing folder
     :return: the temporary test folder
     """
     temp = tempfile.mkdtemp()
-    folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", folder))
+    cases_folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "cases", folder))
+    src = os.path.join(cases_folder, "src")
     dst = os.path.join(temp, "dst")
-    shutil.copytree(folder, dst)
+    shutil.copytree(src, dst)
     # Do not diff our file
-    save(os.path.join(dst, ".gitignore"), "test.json\n.coverage\n.covtest\n.covtest/*\n__pycache__")
+    save(os.path.join(dst, ".gitignore"), ".coverage\n.covtest\n.covtest/*\n__pycache__\n.pytest_cache")
     return dst
 
 
-def init_repo(folder):
+def git_init_repo(folder):
     t = time.time()
     with chdir(folder):
         run("git init .")
@@ -35,22 +37,20 @@ def init_repo(folder):
     logger.debug(f"TIME: init_repo {time.time() - t}")
 
 
-def prepare_patch_diff(target, folder):
+def do_code_changes(target, folder):
     """ copy the files from "folder" onto "target" and compute the diff
     """
+    folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "cases", folder))
+
     # FIXME: Not nested folders
     for f in os.listdir(folder):
+        if f == "test.json":
+            continue
         f = os.path.join(folder, str(f))
         shutil.copy(f, target)
 
-
-def add_noserc_plugin(folder):
-    coveragerc = textwrap.dedent("""
-        [nosetests]
-        plugins=MyCovTestPlugin
-    """)
-    with open(os.path.join(folder, "setup.cfg"), "w") as f:
-        f.write(coveragerc)
+    tests_def = json.loads(load(os.path.join(folder, "test.json")))
+    return set(tests_def["tests"])
 
 
 @contextlib.contextmanager

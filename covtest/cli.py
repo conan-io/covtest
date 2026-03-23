@@ -1,10 +1,12 @@
 import argparse
 import logging
+import os.path
 import sys
 from pathlib import Path
 
 from covtest.covtest import covtest_postprocess, covtest_preprocess
 from covtest.errors import CovTestException
+from covtest.util.files import save
 
 
 def _parse_args(argv):
@@ -82,9 +84,9 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
-        for nodeid in sorted(tests):
-            logging.info(f"TESTS TO RUN: {tests}")
-            print(nodeid)
+        filename = os.path.abspath("covtests.tests")
+        save(filename, "\n".join(sorted(tests)))
+        logging.info(f"Saved tests to run in: {filename}")
         return 0
 
     raise AssertionError(f"unknown command: {args.command}")

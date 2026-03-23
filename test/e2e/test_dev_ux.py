@@ -1,61 +1,28 @@
-import io
-import logging
 import os
-import tempfile
 
-from covtest.cli import main
-from covtest.git import git_diff
-from covtest.util.run import run
+from test.e2e.client import TestClient
 from test.integration.test_cases_utils import prepare_src_folder, git_init_repo, do_code_changes
 
 
-class TestClient:
-    def __init__(self, cwd=None):
-        self.cwd = cwd or tempfile.mkdtemp()
-        self.out = ""
-
-    def run_cmd(self, cmd):
-        return run(cmd, cwd=self.cwd)
-
-    def run(self, cmd):
-        if isinstance(cmd, str):
-            cmd = cmd.split(" ")
-
-        # Get the ROOT logger (no name)
-        root_logger = logging.getLogger()
-        root_logger.setLevel(logging.INFO)
-        log_buffer = io.StringIO()
-        handler = logging.StreamHandler(log_buffer)
-        root_logger.handlers = []
-        root_logger.addHandler(handler)
-
-        cwd = os.getcwd()
-        try:
-            os.chdir(self.cwd)
-            result = main(cmd)
-        finally:
-            os.chdir(cwd)
-        self.out = log_buffer.getvalue()
-        return result
-
-
-def test_dev_ux():
+def test_dev_ux_cmd():
     src_folder = prepare_src_folder("mymath")
     c = TestClient(src_folder)
-    print(src_folder)
     git_init_repo(src_folder)
 
     out, err = c.run_cmd("pytest --cov=. --cov-context=test")
-    # print(out)
     assert "2 passed" in out
 
     c.run("process .")
-    print(c.out)
     assert "Processing coverage data" in c.out
     assert "Processing done" in c.out
+    assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 
     do_code_changes(src_folder, "mymath/fix_add")
 
     c.run("predict .")
-    print(c.out)
+    # Predicted files look ok
+    assert "mymath_test.py::MyMathTest::test_add" == c.load("covtests.tests")
 
+    # Run optimized tests only predicted
+    out, err = c.run_cmd("pytest @covtests.tests")
+    assert "1 passed in" in out  # Only 1 test!

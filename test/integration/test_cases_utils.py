@@ -88,20 +88,3 @@ def run_pytest(folder, tests=None,  env=None, context=None):
     logger.debug("+++++++ Finalized pytest %s", tests)
     logger.debug(f"+++++++ TIME: run_pytest {time.time() - t}")
     return stdout, stderr
-
-
-def validate_tests(context, stdout):
-    passing = context["pass"]
-    fail = context["fail"]
-    for f in fail:
-        assert f"{f} FAILED" in stdout, f
-    for p in passing:
-        assert f"{p} PASSED" in stdout, p
-
-    if not fail and not passing:
-        assert "no tests ran" in stdout
-    else:
-        if fail:
-            assert f"{len(fail)} failed" in stdout
-        if passing:
-            assert f"{len(passing)} passed" in stdout

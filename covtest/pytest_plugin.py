@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from covtest.covtest import covtest_postprocess, covtest_preprocess
+from covtest.covtest import covtest_postprocess, predict_tests
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def patch_open(request):
 def pytest_collection_modifyitems(session, config, items):
     case_folder = session.startpath
     context = config.getoption("covtest_context", default=None)
-    optimized_tests = covtest_preprocess(case_folder, context)
+    optimized_tests = predict_tests(case_folder, context)
     if optimized_tests is None:
         return
 

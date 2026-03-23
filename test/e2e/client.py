@@ -22,6 +22,7 @@ class TestClient:
     def run(self, cmd):
         if isinstance(cmd, str):
             cmd = cmd.split(" ")
+        cmd = [c for c in cmd if c]
 
         # Get the ROOT logger (no name)
         root_logger = logging.getLogger()

@@ -102,7 +102,7 @@ def extract_tests(folder, filename):
     return file_tests
 
 
-def covtest_postprocess(folder, context):
+def covtest_postprocess(folder, context, covtest_file=None):
     """
     process the .coverage file and saves a .covtest
     it will keep the information already existing in .covtest
@@ -139,9 +139,11 @@ def covtest_postprocess(folder, context):
         logger.debug(f"Covtest not storing data because repo is dirty: {folder}")
         return
 
-    covtest_folder = os.path.join(folder, COVTEST_FOLDER, base_commit, str(context))
-    logger.info(f"Covtest storing data in folder: {covtest_folder}")
-    cov_test_data.save(covtest_folder)
+    if covtest_file is None:
+        covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit, str(context))
+    covtest_file = os.path.abspath(covtest_file)
+    logger.info(f"Covtest storing data: {covtest_file}")
+    cov_test_data.save(covtest_file)
     logger.debug(f"TIME: covtest_post_process {time.time() - t}")
 
 
@@ -157,21 +159,24 @@ def covtest_base_folder(folder, context):
         logger.debug("Covtest couldn't find data for previous commits")
 
 
-def covtest_preprocess(folder, context):
+def predict_tests(folder, context, covtest_file=None, base_diff=""):
     """ get the stored coverage data in our DB,
     feeding the modified lines from git diff, will output the
     tests that need to be run
     """
-    base = covtest_base_folder(folder, context)
-    if base is None:
-        return
-    covtest_folder, base_commit = base
-    covdata = CovTestData.load(covtest_folder)
-    if covdata is None:
-        logger.debug(f"No covtest data inside '{covtest_folder}' folder")
+    if covtest_file is None:
+        assert base_diff == ""
+        # Looking for the covtest data file in the default locations
+        # At the moment only local .covtest folder
+        base = covtest_base_folder(folder, context)
+        if base is None:
+            return
+        covtest_file, base_diff = base
+
+    covdata = CovTestData.load(covtest_file)
 
     logger.info("Computing current diff")
-    text_diff = git_diff(folder, base_commit)
+    text_diff = git_diff(folder, base_diff)
     logger.debug(f"git diff\n{text_diff}")
     modified_lines = diff(text_diff)
     logger.debug(f"Modified lines\n{modified_lines}")

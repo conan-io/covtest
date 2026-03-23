@@ -4,7 +4,7 @@ import os.path
 import sys
 from pathlib import Path
 
-from covtest.covtest import covtest_postprocess, covtest_preprocess
+from covtest.covtest import covtest_postprocess, predict_tests
 from covtest.errors import CovTestException
 from covtest.util.files import save
 
@@ -32,6 +32,10 @@ def _parse_args(argv):
         help="Project directory containing .coverage",
     )
     p_process.add_argument(
+        "-cf", "--covtest-file",
+        help="Covtest fiel location"
+    )
+    p_process.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -47,6 +51,10 @@ def _parse_args(argv):
         "path",
         type=Path,
         help="Project directory",
+    )
+    p_predict.add_argument(
+        "-cf", "--covtest-file",
+        help="Covtest fiel location"
     )
 
     return parser.parse_args(argv)
@@ -69,7 +77,7 @@ def main(argv=None):
     if args.command == "process":
         logger.info("Processing coverage data")
         try:
-            covtest_postprocess(str(folder), context)
+            covtest_postprocess(str(folder), context, args.covtest_file)
         except CovTestException as e:
             logger.error(e)
             return -1
@@ -77,7 +85,7 @@ def main(argv=None):
         return 0
 
     if args.command == "predict":
-        tests = covtest_preprocess(str(folder), context)
+        tests = predict_tests(str(folder), context, args.covtest_file)
         if tests is None:
             print(
                 "covtest: no stored data for this repo/context (run tests with covtest first)",

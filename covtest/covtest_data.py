@@ -1,11 +1,11 @@
 import json
 import os
 
+from covtest.errors import CovTestException
 from covtest.util.files import save, load
 
 
 class CovTestData:
-    FILENAME = "covtest.db"
 
     def __init__(self, data_files=None, py_files=None, last_failed=None):
         # the relation between the files in the project that have been opened
@@ -90,8 +90,7 @@ class CovTestData:
             parsed_file_data = parse_data.files[file]
             _extend_global_usages(test_data, parsed_file_data)
 
-    def save(self, folder):
-        p = os.path.join(folder, CovTestData.FILENAME)
+    def save(self, filepath):
         data_files = {path: list(tests) for path, tests in self.data_files.items()}
         pyfiles = {f: {lines: list(tests) for lines, tests in test_data.items()}
                    for f, test_data in self.py_files.items()}
@@ -99,14 +98,13 @@ class CovTestData:
         result = {"data_files": data_files,
                   "py_files": pyfiles,
                   "last_failed": self.last_failed}
-        save(p, json.dumps(result))
+        save(filepath, json.dumps(result))
 
     @staticmethod
-    def load(folder):
-        p = os.path.join(folder, CovTestData.FILENAME)
-        if not os.path.exists(p):
-            return None
-        content = load(p)
+    def load(filepath):
+        if not os.path.exists(filepath):
+            raise CovTestException(f"Covtest file not found: {filepath}")
+        content = load(filepath)
         data = json.loads(content)
         data_files = {k: set(v) for k, v in data["data_files"].items()}
         py_files = {filename: {int(line): set(tests) for line, tests in lines.items()}

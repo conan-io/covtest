@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from covtest.covtest import covtest_preprocess
+from covtest.covtest import predict_tests
 from covtest.util.run import run
 from test.integration.test_cases_utils import prepare_src_folder, do_code_changes, git_init_repo, \
     run_pytest
@@ -51,7 +51,7 @@ def change_and_predict(case, case_folder):
     expected_tests = do_code_changes(case_folder, case)
 
     logger.debug(f"\n\n\n---- PREDICT TESTS -----------")
-    predicted_tests = covtest_preprocess(case_folder, None)
+    predicted_tests = predict_tests(case_folder, None)
     logger.debug(f"Predicted tests: {predicted_tests}")
     assert predicted_tests == expected_tests
 

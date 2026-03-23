@@ -91,11 +91,22 @@ class CovTestData:
             _extend_global_usages(test_data, parsed_file_data)
 
     def save(self, filepath):
-        data_files = {path: list(tests) for path, tests in self.data_files.items()}
-        pyfiles = {f: {lines: list(tests) for lines, tests in test_data.items()}
+        all_tests = set()
+        for tests in self.data_files.values():
+            for line_tests in tests.values():
+                all_tests.update(line_tests)
+        for tests in self.py_files.values():
+            for line_tests in tests.values():
+                all_tests.update(line_tests)
+        all_tests = list(sorted(all_tests))
+        dict_tests = {test: i for i, test in enumerate(all_tests)}
+        data_files = {path: [dict_tests[t] for t in tests]
+                      for path, tests in self.data_files.items()}
+        pyfiles = {f: {lines: [dict_tests[t] for t in tests]
+                       for lines, tests in test_data.items()}
                    for f, test_data in self.py_files.items()}
-
-        result = {"data_files": data_files,
+        result = {"tests": all_tests,
+                  "data_files": data_files,
                   "py_files": pyfiles,
                   "last_failed": self.last_failed}
         save(filepath, json.dumps(result))
@@ -106,8 +117,11 @@ class CovTestData:
             raise CovTestException(f"Covtest file not found: {filepath}")
         content = load(filepath)
         data = json.loads(content)
-        data_files = {k: set(v) for k, v in data["data_files"].items()}
-        py_files = {filename: {int(line): set(tests) for line, tests in lines.items()}
+        tests_list = data["tests"]
+        data_files = {k: set(tests_list[i] for i in v)
+                      for k, v in data["data_files"].items()}
+        py_files = {filename: {int(line): set(tests_list[i] for i in tests)
+                               for line, tests in lines.items()}
                     for filename, lines in data["py_files"].items()}
         last_failed = data["last_failed"]
         return CovTestData(data_files=data_files, py_files=py_files, last_failed=last_failed)

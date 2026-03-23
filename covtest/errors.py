@@ -1,0 +1,2 @@
+class CovTestException(Exception):
+    pass

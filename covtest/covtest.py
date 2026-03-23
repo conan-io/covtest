@@ -9,6 +9,7 @@ import coverage
 from covtest.covtest_data import CovTestData
 from covtest.ast_parser import ParsedData
 from covtest.diff import diff
+from covtest.errors import CovTestException
 from covtest.git import git_commits, git_diff, git_dirty
 from covtest.util.files import load, chdir
 
@@ -30,10 +31,13 @@ def extract_coverage(folder):
     """ Parse the .coverage DB to get the info we want
     which is a dict {file: {line: [pytest cov context]}}
     """
+    logger.info(f"Extracting coverage data from coverage DB: {folder}")
+    file = os.path.join(folder, ".coverage")
+    if not os.path.isfile(file):
+        raise CovTestException(f"Coverage file {file} not found")
     cov = coverage.CoverageData()
     with chdir(folder):
         cov.read()
-    # print("FOLDER", folder)
     result = {}
 
     for f in cov.measured_files():
@@ -166,11 +170,13 @@ def covtest_preprocess(folder, context):
     if covdata is None:
         logger.debug(f"No covtest data inside '{covtest_folder}' folder")
 
+    logger.info("Computing current diff")
     text_diff = git_diff(folder, base_commit)
     logger.debug(f"git diff\n{text_diff}")
     modified_lines = diff(text_diff)
     logger.debug(f"Modified lines\n{modified_lines}")
     # Make it absolute paths to match with the DB
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
+    logger.info("Computing tests to run")
     tests = suite_to_run(covdata, modified_lines, folder)
     return tests

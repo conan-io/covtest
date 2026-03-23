@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from covtest.covtest import covtest_postprocess, covtest_preprocess
+from covtest.errors import CovTestException
 
 
 def _parse_args(argv):
@@ -65,7 +66,11 @@ def main(argv=None):
 
     if args.command == "process":
         logger.info("Processing coverage data")
-        covtest_postprocess(str(folder), context)
+        try:
+            covtest_postprocess(str(folder), context)
+        except CovTestException as e:
+            logger.error(e)
+            return -1
         logger.info("Processing done")
         return 0
 
@@ -78,6 +83,7 @@ def main(argv=None):
             )
             return 1
         for nodeid in sorted(tests):
+            logging.info(f"TESTS TO RUN: {tests}")
             print(nodeid)
         return 0
 

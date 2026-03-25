@@ -170,6 +170,7 @@ def predict_tests(folder, context, covtest_file=None, base_diff=""):
         # At the moment only local .covtest folder
         base = covtest_base_folder(folder, context)
         if base is None:
+            logger.info("No covtest base folder found")
             return
         covtest_file, base_diff = base
 

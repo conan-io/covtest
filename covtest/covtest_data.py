@@ -93,8 +93,7 @@ class CovTestData:
     def save(self, filepath):
         all_tests = set()
         for tests in self.data_files.values():
-            for line_tests in tests.values():
-                all_tests.update(line_tests)
+            all_tests.update(tests)
         for tests in self.py_files.values():
             for line_tests in tests.values():
                 all_tests.update(line_tests)

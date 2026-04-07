@@ -15,12 +15,15 @@ class TestClient:
         self.cwd = cwd or tempfile.mkdtemp()
         self.out = ""
 
-    def run_cmd(self, cmd, env=None):
-        return run(cmd, cwd=self.cwd, env=env)
+    def run_cmd(self, cmd, env=None, assert_error=False):
+        return run(cmd, cwd=self.cwd, env=env, ignore_error=assert_error)
 
     def save(self, files):
         for f, content in files.items():
             save(os.path.join(self.cwd, f), str(content))
+
+    def rm(self, file):
+        os.remove(os.path.join(self.cwd, file))
 
     @contextmanager
     def chdir(self, path):

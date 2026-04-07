@@ -45,8 +45,11 @@ def extract_coverage(folder):
         # print(f, contexts)
         clean_contexts = {}  # for pytest
         for line, context in sorted(contexts.items()):
-            # Cleaning multiple contexts from pytest-cov plugin
-            clean = [c.split("|")[0] for c in context]
+            def _parse_context(c):
+                parts = c.rsplit("|", 1)
+                if len(parts) > 1:
+                    return parts[0]
+            clean = [_parse_context(c) for c in context]
             clean = [c for c in clean if c]
             clean_contexts[line] = set(clean)
         f = os.path.relpath(f, folder)

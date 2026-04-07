@@ -92,9 +92,22 @@ def main(argv=None):
                 file=sys.stderr,
             )
             return 1
-        filename = os.path.abspath("covtests.tests")
-        save(filename, "\n".join(sorted(tests)))
-        logging.info(f"Saved tests to run in: {filename}")
+
+        # group tests by context:
+        contexts = {}
+        for t in tests:
+            parts = t.split("|", 1)
+            if len(parts) == 2:
+                context, test = parts
+            else:
+                context, test = None, parts[0]
+            contexts.setdefault(context, []).append(test)
+
+        for context, tests in contexts.items():
+            f = "covtests.tests" if not context else f"covtests.{context}.tests"
+            filename = os.path.abspath(f)
+            save(filename, "\n".join(sorted(tests)))
+            logging.info(f"Saved tests to run in: {filename}")
         return 0
 
     raise AssertionError(f"unknown command: {args.command}")

@@ -24,7 +24,15 @@ def prepare_src_folder(folder):
     dst = os.path.join(temp, "dst")
     shutil.copytree(src, dst)
     # Do not diff our file
-    save(os.path.join(dst, ".gitignore"), ".coverage\n.covtest\n.covtest/*\n__pycache__\n.pytest_cache")
+    gitignore = textwrap.dedent("""\
+        .coverage
+        .covtest
+        .covtest/*
+        __pycache__
+        .pytest_cache
+        .coveragerc
+        """)
+    save(os.path.join(dst, ".gitignore"), gitignore)
     return dst
 
 

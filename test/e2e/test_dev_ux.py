@@ -19,7 +19,6 @@ def test_dev_ux_cmd(user_location):
 
     file_arg = "--covtest-file=mycvfile" if user_location else ""
     c.run(f"process . {file_arg}")
-    print(c.out)
     assert "Processing coverage data" in c.out
     assert "Processing done" in c.out
     if user_location:

@@ -75,15 +75,14 @@ def environment_update(variables):
         os.environ.update(_environ)
 
 
-def run_pytest(folder, tests=None,  env=None, context=None):
+def run_pytest(folder, tests=None,  env=None,):
     tests = tests or folder
     t = time.time()
     logger.debug("++++++ Launching pytest %s", tests)
 
     folder = folder.replace("\\", "/")
-    context = f"--covtest-context={context}" if context else ""
     args = [tests, "-p covtest.pytest_plugin", "--log-cli-level=DEBUG",
-            "-v", f'--cov={folder}', "--cov-context=test", context]
+            "-v", f'--cov={folder}', "--cov-context=test"]
     with environment_update(env):
         result = subprocess.run("pytest %s" % " ".join(args), capture_output=True,
                                 cwd=folder)

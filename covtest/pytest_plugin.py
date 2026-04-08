@@ -47,14 +47,4 @@ def covtest_modifyitems(session, config, items):
 
 def pytest_sessionfinish(session, exitstatus):
     case_folder = session.startpath
-    config = session.config
-    context = config.getoption("covtest_context", default=None)
-    covtest_postprocess(case_folder, context)
-
-
-def pytest_addoption(parser):
-    group = parser.getgroup("")
-    group.addoption(
-        "--covtest-context",
-        help='Define covtest context',
-    )
+    covtest_postprocess(case_folder)

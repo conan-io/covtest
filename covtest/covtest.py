@@ -105,13 +105,13 @@ def extract_tests(folder, filename):
     return file_tests
 
 
-def covtest_postprocess(folder, context, covtest_file=None):
+def covtest_postprocess(folder, covtest_file=None):
     """
     process the .coverage file and saves a .covtest
     it will keep the information already existing in .covtest
     from the data_files (captured while running the suite)
-    :param context:
     :param folder: containing the .coverage file
+    :param covtest_file: file with covtest information
     :return: None
     """
     t = time.time()
@@ -125,7 +125,7 @@ def covtest_postprocess(folder, context, covtest_file=None):
         last_failed = json.loads(load(last_failed_file))
         last_failed = [v for v in last_failed.keys()]
 
-    opened_files = os.path.join(folder, ".covtest", "{}file_open".format(context or ""))
+    opened_files = os.path.join(folder, ".covtest", "file_open")
     if os.path.exists(opened_files):
         opened_files = load(opened_files).splitlines()
         opened_files = [o.split("=") for o in opened_files]
@@ -143,18 +143,18 @@ def covtest_postprocess(folder, context, covtest_file=None):
         return
 
     if covtest_file is None:
-        covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit, str(context))
+        covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit)
     covtest_file = os.path.abspath(covtest_file)
     logger.info(f"Covtest storing data: {covtest_file}")
     cov_test_data.save(covtest_file)
     logger.debug(f"TIME: covtest_post_process {time.time() - t}")
 
 
-def covtest_base_folder(folder, context):
+def covtest_base_folder(folder):
     base_commits = git_commits(folder, 10)
     base_folder = os.path.join(folder, COVTEST_FOLDER)
     for base_commit in base_commits:
-        covtest_folder = os.path.join(base_folder, base_commit, str(context))
+        covtest_folder = os.path.join(base_folder, base_commit)
         if os.path.exists(covtest_folder):
             logger.debug(f"Covtest using folder: {covtest_folder}")
             return covtest_folder, base_commit
@@ -162,7 +162,7 @@ def covtest_base_folder(folder, context):
         logger.debug("Covtest couldn't find data for previous commits")
 
 
-def predict_tests(folder, context, covtest_file=None, base_diff=""):
+def predict_tests(folder, covtest_file=None, base_diff=""):
     """ get the stored coverage data in our DB,
     feeding the modified lines from git diff, will output the
     tests that need to be run
@@ -171,7 +171,7 @@ def predict_tests(folder, context, covtest_file=None, base_diff=""):
         assert base_diff == ""
         # Looking for the covtest data file in the default locations
         # At the moment only local .covtest folder
-        base = covtest_base_folder(folder, context)
+        base = covtest_base_folder(folder)
         if base is None:
             logger.info("No covtest base folder found")
             return

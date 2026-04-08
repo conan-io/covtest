@@ -89,3 +89,39 @@ def test_dev_ux_split_testing():
 
     out, err = c.run_cmd("pytest @covtests.windows.tests -m linux", assert_error=True)
     assert "1 deselected in" in out
+
+
+def test_dev_ux_conftest():
+    # How a dev can run pytest easily via plugin
+    src_folder = prepare_src_folder("mymath")
+    c = TestClient(src_folder)
+    conftest = textwrap.dedent("""\
+        from covtest.pytest_plugin import covtest_modifyitems
+
+        def pytest_collection_modifyitems(session, config, items):
+            return covtest_modifyitems(session, config, items)
+    """)
+    c.save({"conftest.py": conftest})
+    git_init_repo(src_folder)
+
+    out, err = c.run_cmd("pytest --cov=. --cov-context=test")
+    assert "2 passed" in out
+
+    c.run(f"process .")
+    assert "Processing coverage data" in c.out
+    assert "Processing done" in c.out
+    assert os.path.isdir(os.path.join(src_folder, ".covtest"))
+
+    # Run optimized tests only predicted
+    # Without changes, no tests to run
+    out, err = c.run_cmd("pytest", assert_error=True)
+    print("OUT!!!", out, "ERR!!!", err)
+    assert "no tests ran" in out  # Only 1 test!
+
+    # Modify the Windows-add
+    do_code_changes(src_folder, "mymath/fix_add")
+
+    # Run optimized tests only predicted
+    out, err = c.run_cmd("pytest")
+    print("OUT!!!", out, "ERR!!!", err)
+    assert "1 passed in" in out  # Only 1 test!

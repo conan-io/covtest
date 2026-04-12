@@ -131,11 +131,16 @@ def _get_broken_tests(repo_dir, venv_python):
     failed = set()
     print("BROKEN TESTS RUN:", result.stdout)
     for line in result.stdout.splitlines():
+        node_id = None
         if "FAILED" in line:
             node_id = line.split("FAILED")[1].strip()
-            failed.add(node_id)
-        if "ERROR" in line:
+        elif "ERROR" in line:
             node_id = line.split("ERROR")[1].strip()
+        if node_id:
+            if "]" in node_id:
+                node_id = node_id[:node_id.index("]")+1]
+            else:
+                node_id = node_id.split(" ")[0]
             failed.add(node_id)
     print("FAILED TESTS:", failed)
     return failed
@@ -184,8 +189,8 @@ def test_covtest_predicts_broken_tests(conan_repo, change):
         print(f"\n[{change['id']}] broken={len(broken)} predicted={len(predicted)} "
               f"recall={recall:.2f} precision={precision:.2f}")
         print(f"  True positives:          {len(tp)}")
-        print(f"  FN (missed by covtest):  {fn}")
-        print(f"  FP (extra predictions):  {fp}")
+        print(f"  FN (missed by covtest):  {len(fn)}: {fn}")
+        print(f"  FP (extra predictions):  {len(fp)}: {fp}")
 
         assert broken, (
             f"No tests failed after applying '{change['id']}' — "

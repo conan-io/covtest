@@ -22,6 +22,8 @@ def str_nested_dict(files):
     for f, contexts in files.items():
         result.append(f)
         read_lines = load(f).splitlines()
+        if not read_lines:  # Completely empty file
+            continue
         for line, tests in sorted(contexts.items()):
             result.append(f"   {line:<2}: {read_lines[line-1][:49]:<50} -> {tests}")
     return "\n".join(result)
@@ -188,4 +190,5 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
     logger.info("Computing tests to run")
     tests = suite_to_run(covdata, modified_lines, folder)
+    logger.info(f"Tests to run: {tests}")
     return tests

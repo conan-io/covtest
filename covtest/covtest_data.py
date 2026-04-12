@@ -33,12 +33,18 @@ class CovTestData:
             for name, lines in parsed_file_data_.global_usages.items():
                 tests_from_usages = set()
                 for lin_ in lines:
-                    tests_from_usages.update(test_data[lin_])
+                    try:
+                        tests_from_usages.update(test_data[lin_])
+                    except KeyError:
+                        pass  # Maybe the global was not properly detected TODO
                 defined_lines = parsed_file_data_.global_definitions.get(name)
                 if defined_lines:  # The whole scope of definition
                     for defined_line in defined_lines:
-                        tests_ = test_data_[defined_line]
-                        tests_.update(tests_from_usages)
+                        try:
+                            tests_ = test_data_[defined_line]
+                            tests_.update(tests_from_usages)
+                        except KeyError:
+                            pass # TODO: Same as above, globals not parsed
 
         for file, test_data in self.py_files.items():
             # print("Extending mappings for", file)
@@ -51,9 +57,10 @@ class CovTestData:
                     continue
                 # Only if this line is covered but no tests assigned
                 endline = parsed_file_data.scopes.get(line)
-                for lin in range(line, endline+1):
-                    lin_tests = test_data.get(lin, [])
-                    tests.update(lin_tests)
+                if endline:  # TODO
+                    for lin in range(line, endline+1):
+                        lin_tests = test_data.get(lin, [])
+                        tests.update(lin_tests)
 
             _extend_global_usages(test_data, parsed_file_data)
 
@@ -71,8 +78,11 @@ class CovTestData:
                         import_tests.update(lin_tests)
                 if import_tests:
                     for import_declared_line in import_declared_lines:
-                        tests = test_data[import_declared_line]
-                        tests.update(import_tests)
+                        try:
+                            tests = test_data[import_declared_line]
+                            tests.update(import_tests)
+                        except KeyError:
+                            pass  # TODO, missing match
 
                 # Project this import mappings into other files, the ones imported from
                 # Brute force, search in every other file for this name

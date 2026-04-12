@@ -103,6 +103,8 @@ def main(argv=None):
                 context, test = None, parts[0]
             contexts.setdefault(context, []).append(test)
 
+        # print('CONTEXTS!!', "\n".join(contexts.keys()))
+
         for context, tests in contexts.items():
             f = "covtests.tests" if not context else f"covtests.{context}.tests"
             filename = os.path.abspath(f)

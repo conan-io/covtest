@@ -38,25 +38,34 @@ class _ParsedFileData:
     @staticmethod
     def _parse_globals_defs(rootnode):
         result = {}
-        for child in ast.iter_child_nodes(rootnode):
-            if isinstance(child, ast.Assign):
-                for t in child.targets:
-                    result[t.id] = list(range(child.lineno, child.end_lineno+1))
-            elif isinstance(child, (ast.Import, ast.ImportFrom)):
-                pass  # parsed in another place
-            else:
-                endlineno = child.lineno
-                for n in ast.iter_child_nodes(child):
-                    try:
-                        endlineno = n.lineno
-                        break
-                    except:
-                        pass
-                try:
-                    result[child.name] = list(range(child.lineno, endlineno+1))
-                except Exception as e:
-                    print("Couldn't parse global ", str(e))
 
+        def _collect(node):
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, ast.Assign):
+                    for t in child.targets:
+                        for name_node in (ast.walk(t) if not isinstance(t, ast.Name) else [t]):
+                            if isinstance(name_node, ast.Name):
+                                result[name_node.id] = list(range(child.lineno, child.end_lineno+1))
+                elif isinstance(child, ast.AnnAssign):
+                    if isinstance(child.target, ast.Name):
+                        result[child.target.id] = list(range(child.lineno, child.end_lineno+1))
+                elif isinstance(child, (ast.Import, ast.ImportFrom)):
+                    pass  # parsed in another place
+                elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    endlineno = child.lineno
+                    for n in ast.iter_child_nodes(child):
+                        try:
+                            endlineno = n.lineno
+                            break
+                        except:
+                            pass
+                    result[child.name] = list(range(child.lineno, endlineno+1))
+                    # Do not recurse into function/class bodies
+                else:
+                    # Recurse into if/for/while/try/with to find nested assignments
+                    _collect(child)
+
+        _collect(rootnode)
         return result
 
     @staticmethod

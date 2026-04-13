@@ -1,0 +1,5 @@
+{
+  "tests": [
+      "mymath_test.py::test_some_math"
+  ]
+}

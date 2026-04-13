@@ -7,12 +7,13 @@ from covtest.util.files import save, load
 
 class CovTestData:
 
-    def __init__(self, data_files=None, py_files=None, last_failed=None):
+    def __init__(self, data_files=None, py_files=None, last_failed=None, scopes=None):
         # the relation between the files in the project that have been opened
         # and the tests that cover/use them
         self.data_files = data_files or {}  # filepath: set(tests)
         self.py_files = py_files or {}
         self.last_failed = last_failed or []
+        self.scopes = scopes or {}
 
     @staticmethod
     def create(coverage_data, parse_data, last_failed, opened_files):
@@ -20,6 +21,8 @@ class CovTestData:
         result.py_files = coverage_data
         result.last_failed = last_failed
         result._extend_mappings(parse_data)
+        result.scopes = {f: {line: lines for line, lines in scope_data.scopes.items()}
+                         for f, scope_data in parse_data.files.items()}
 
         for item in opened_files or []:
             test, file = item
@@ -117,6 +120,7 @@ class CovTestData:
         result = {"tests": all_tests,
                   "data_files": data_files,
                   "py_files": pyfiles,
+                  "scopes": self.scopes,
                   "last_failed": self.last_failed}
         save(filepath, json.dumps(result))
 
@@ -133,4 +137,6 @@ class CovTestData:
                                for line, tests in lines.items()}
                     for filename, lines in data["py_files"].items()}
         last_failed = data["last_failed"]
-        return CovTestData(data_files=data_files, py_files=py_files, last_failed=last_failed)
+        scopes = {filename: {int(line): int(max_line) for line, max_line in lines.items()}
+                  for filename, lines in data["scopes"].items()}
+        return CovTestData(data_files=data_files, py_files=py_files, last_failed=last_failed, scopes=scopes)

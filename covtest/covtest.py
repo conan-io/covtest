@@ -59,12 +59,13 @@ def extract_coverage(folder):
     return result
 
 
-def suite_to_run(covdata, modified, folder):
+def suite_to_run(covdata, modified, inserted, folder):
     """ compute which tests to run given the conandata and the
     modified files and lines
     """
     data_files = covdata.data_files
     py_files = covdata.py_files
+    scopes = covdata.scopes
     result = set()
     for filename, modified_lines in modified.items():
         if data_files:
@@ -83,7 +84,42 @@ def suite_to_run(covdata, modified, folder):
                 if t:
                     result.add(t)
         # Now we need to check if modified lines are new tests
+        # TODO: Better filtering of test files, in case some production code is named "test"
         if "test" in filename:
+            parsed_tests = extract_tests(folder, filename)
+            # The previously existing tests run by this unit
+            existing_tests = set()
+            for v in m.values():
+                existing_tests.update(v)
+            # Tests that are new, not previously existing, need to be run
+            for file_test in parsed_tests:
+                if file_test not in existing_tests:
+                    result.add(file_test)
+
+    for filename, inserted_lines in inserted.items():
+        m = py_files.get(filename)
+        if m is None:
+            logger.debug("FILE %s does not contain test data" % filename)
+            continue
+
+        scope = scopes.get(filename)
+        if scope is None:
+            continue
+
+        for line in inserted_lines:
+            for s in range(line, 0, -1):
+                max_line = scope.get(s)
+                if max_line is not None and s < line <= max_line:
+                    tests = m.get(s, ())
+                    # Find the line in the scope
+                    for t in tests:
+                        if t:
+                            result.add(t)
+                    break
+        # Now we need to check if modified lines are new tests
+        # TODO: Repeated from above
+        if "test" in filename:
+            # TODO: do not repeat this
             parsed_tests = extract_tests(folder, filename)
             # The previously existing tests run by this unit
             existing_tests = set()
@@ -184,11 +220,13 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     logger.info("Computing current diff")
     text_diff = git_diff(folder, base_diff)
     logger.debug(f"git diff\n{text_diff}")
-    modified_lines = diff(text_diff)
+    modified_lines, inserted_lines = diff(text_diff)
     logger.debug(f"Modified lines\n{modified_lines}")
     # Make it absolute paths to match with the DB
+    # TODO: Normalize paths
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
+    inserted_lines = {f.replace("\\", "/"): lines for f, lines in inserted_lines.items()}
     logger.info("Computing tests to run")
-    tests = suite_to_run(covdata, modified_lines, folder)
+    tests = suite_to_run(covdata, modified_lines, inserted_lines, folder)
     logger.info(f"Tests to run: {tests}")
     return tests

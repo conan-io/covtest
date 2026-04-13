@@ -35,13 +35,11 @@ def pytest_collection_modifyitems(session, config, items):
 def covtest_modifyitems(session, config, items):
     case_folder = session.startpath
     context = config.getoption("covtest_context", default=None)
-    print("covtest context", context)
     optimized_tests = predict_tests(case_folder, context)
     if optimized_tests is None:
         print("covtest test prediction returned None, not filtering")
         return
 
-    print(f"Filtered tests to run:\n{optimized_tests}")
     items[:] = [t for t in items if t.nodeid in optimized_tests]
 
 

@@ -14,12 +14,6 @@ def _parse_args(argv):
     sub = parser.add_subparsers(dest="command", required=True)
 
     ctx = argparse.ArgumentParser(add_help=False)
-    ctx.add_argument(
-        "--context",
-        default=None,
-        metavar="TEXT",
-        help="Covtest context (same as pytest --covtest-context)",
-    )
 
     p_process = sub.add_parser(
         "process",
@@ -60,6 +54,29 @@ def _parse_args(argv):
     return parser.parse_args(argv)
 
 
+def _split_context_test(t):
+    """Split a test string into (context, test_id).
+
+    The format is either ``context|test_path[params]`` or plain ``test_path[params]``.
+    The context separator ``|`` is always at the outermost level — before the first
+    ``[`` — while ``|`` characters inside ``[...]`` belong to parametrize arguments
+    and must not be treated as separators.
+
+    Examples::
+
+        "windows|test_file.py::test_func"         -> ("windows", "test_file.py::test_func")
+        "windows|test_file.py::test_func[a | b]"  -> ("windows", "test_file.py::test_func[a | b]")
+        "test_file.py::test_func[a | b]"          -> (None,      "test_file.py::test_func[a | b]")
+        "test_file.py::test_func"                 -> (None,      "test_file.py::test_func")
+    """
+    bracket = t.find("[")
+    # Only look for the separator before the first '['; if no '[' exists, search the whole string
+    pipe = t.find("|", 0, bracket if bracket != -1 else len(t))
+    if pipe == -1:
+        return None, t
+    return t[:pipe], t[pipe + 1:]
+
+
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -71,8 +88,6 @@ def main(argv=None):
     if not folder.is_dir():
         print(f"Not a directory: {folder}", file=sys.stderr)
         return 1
-
-    context = args.context
 
     if args.command == "process":
         logger.info("Processing coverage data")
@@ -96,11 +111,7 @@ def main(argv=None):
         # group tests by context:
         contexts = {}
         for t in tests:
-            parts = t.split("|", 1)
-            if len(parts) == 2:
-                context, test = parts
-            else:
-                context, test = None, parts[0]
+            context, test = _split_context_test(t)
             contexts.setdefault(context, []).append(test)
 
         # print('CONTEXTS!!', "\n".join(contexts.keys()))

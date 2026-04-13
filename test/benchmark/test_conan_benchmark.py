@@ -23,6 +23,14 @@ BREAKING_CHANGES = [
         "replacement": "            return kk\n",
         "description": "Invert _VersionItem.__lt__ numeric comparison",
     },
+    {
+        "id": "manifest breaking",
+        "file": "conan/internal/model/manifest.py",
+        "line": 93,
+        "original": '        files, _ = gather_files(folder)\n',
+        "replacement": '        files, _ = gather_files(folder)\n        kk\n',
+        "description": "Breaking Manifest",
+    },
 ]
 
 
@@ -58,15 +66,19 @@ def conan_repo(tmp_path_factory):
     def _pip(*args):
         subprocess.run([venv_python, "-m", "pip", "install", *args], check=True, cwd=repo_dir)
 
-    # 3. Install Conan runtime + dev requirements
-    print("Installing Conan requirements …")
-    _pip("-r", "conans/requirements.txt")
-    _pip("-r", "conans/requirements_dev.txt")
+    # Upgrade pip inside the venv — venv.create seeds it from ensurepip which is outdated
+    _pip("--upgrade", "pip")
 
-    # 4. Install current covtest as editable into the same venv
+    # 3. Install covtest first so all its dependencies (e.g. unidiff) are already
+    #    present when the Conan requirements are resolved, avoiding resolver warnings.
     print("Installing covtest (editable) …")
     _pip("-e", str(COVTEST_ROOT))
     _pip("pytest-json-report")
+
+    # 4. Install Conan runtime + dev requirements
+    print("Installing Conan requirements …")
+    _pip("-r", "conans/requirements.txt")
+    _pip("-r", "conans/requirements_dev.txt")
 
     # 5. Locally git-ignore generated artifacts so git_dirty() stays False.
     #    We write to .git/info/exclude rather than modifying any tracked file.

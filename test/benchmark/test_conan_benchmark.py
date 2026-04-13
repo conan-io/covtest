@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -65,12 +66,13 @@ def conan_repo(tmp_path_factory):
     # 4. Install current covtest as editable into the same venv
     print("Installing covtest (editable) …")
     _pip("-e", str(COVTEST_ROOT))
+    _pip("pytest-json-report")
 
     # 5. Locally git-ignore generated artifacts so git_dirty() stays False.
     #    We write to .git/info/exclude rather than modifying any tracked file.
     exclude_file = os.path.join(repo_dir, ".git", "info", "exclude")
     with open(exclude_file, "a") as f:
-        f.write("\n.coverage\n.covtest\n.venv\ncovtests.tests\n")
+        f.write("\n.coverage\n.covtest\n.venv\ncovtests.tests\n.report.json\n")
 
     # 6. Run pytest with coverage in parallel (pytest-xdist is in requirements_dev)
     print("Running pytest with coverage …")
@@ -120,28 +122,23 @@ def _revert_change(repo_dir, change):
 
 
 def _get_broken_tests(repo_dir, venv_python):
-    """Run the full unit suite (serial, -v) and return the set of FAILED test node IDs."""
-    result = subprocess.run(
+    """Run the full unit suite in parallel and return node IDs with failed/error outcome."""
+    report_file = os.path.join(repo_dir, ".report.json")
+    subprocess.run(
         [venv_python, "-m", "pytest", "test/unittests/",
-         "-v", "--tb=no", "-q"],
+         "-n", "auto",
+         "--tb=no", "-q",
+         "--json-report", f"--json-report-file={report_file}"],
         cwd=repo_dir,
         capture_output=True,
         text=True,
     )
-    failed = set()
-    print("BROKEN TESTS RUN:", result.stdout)
-    for line in result.stdout.splitlines():
-        node_id = None
-        if "FAILED" in line:
-            node_id = line.split("FAILED")[1].strip()
-        elif "ERROR" in line:
-            node_id = line.split("ERROR")[1].strip()
-        if node_id:
-            if "]" in node_id:
-                node_id = node_id[:node_id.index("]")+1]
-            else:
-                node_id = node_id.split(" ")[0]
-            failed.add(node_id)
+    if not os.path.exists(report_file):
+        return set()
+    with open(report_file) as f:
+        report = json.load(f)
+    failed = {t["nodeid"] for t in report.get("tests", [])
+              if t["outcome"] in ("failed", "error")}
     print("FAILED TESTS:", failed)
     return failed
 

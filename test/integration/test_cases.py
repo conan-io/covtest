@@ -101,3 +101,14 @@ def test_contexts(case):
     """
     """
     pass
+
+
+@pytest.mark.parametrize("case", collect_cases("pyfiles"), ids=os.path.basename)
+def test_pyfiles(prepare_case, case):
+    """Modifying a project configuration file must cause predict_tests to return
+    None, signalling that all tests must run (impact prediction is not possible)."""
+    case_folder = prepare_case("pyfiles")
+    run("git checkout -- .", cwd=case_folder)
+    do_code_changes(case_folder, case)
+    predicted_tests = predict_tests(case_folder, None)
+    assert predicted_tests is None

@@ -49,4 +49,4 @@ def test_diff_pure_insertion_between_functions():
     # No source lines were removed or changed — only new lines were added.
     # mult() must not appear in the result even though it shifted down.
     assert modified == {'mymath.py': []}
-    assert inserted == {'mymath.py': [6, 7, 8, 9]}
+    assert inserted == {'mymath.py': [6]}

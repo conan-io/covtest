@@ -36,6 +36,11 @@ def covtest_modifyitems(session, config, items):
     case_folder = session.startpath
     context = config.getoption("covtest_context", default=None)
     optimized_tests = predict_tests(case_folder, context)
+    if optimized_tests == -1:
+        logger.info("No covtest base folder found, cannot filter, "
+                    "make sure to run 'process' first to collect"
+                    " information from coverage data")
+        return
     if optimized_tests is None:
         print("covtest test prediction returned None, not filtering")
         return

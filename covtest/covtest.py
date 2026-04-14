@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import logging
 import os
@@ -15,6 +16,31 @@ from covtest.util.files import load, chdir
 
 logger = logging.getLogger(__name__)
 COVTEST_FOLDER = ".covtest"
+
+# Sentinel returned by predict_tests when a project configuration file was
+# modified.  The caller must run all tests — impact prediction is not possible.
+
+# File name patterns whose modification forces a full test run.
+_CONFIG_FILE_PATTERNS = (
+    "requirements*.txt",
+    "pyproject.toml",
+    "setup.py",
+    "setup.cfg",
+    "pytest.ini",
+    "tox.ini",
+    ".coveragerc",
+    "conftest.py",
+)
+
+
+def _is_config_file(filepath):
+    """Return True when *filepath* is a project configuration file.
+
+    Modifications to these files can affect the test environment or test
+    collection in ways that are impossible to predict from coverage data alone.
+    """
+    name = os.path.basename(filepath)
+    return any(fnmatch.fnmatch(name, pat) for pat in _CONFIG_FILE_PATTERNS)
 
 
 def str_nested_dict(files):
@@ -211,8 +237,7 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
         # At the moment only local .covtest folder
         base = covtest_base_folder(folder)
         if base is None:
-            logger.info("No covtest base folder found")
-            return
+            return -1
         covtest_file, base_diff = base
 
     covdata = CovTestData.load(covtest_file)
@@ -226,6 +251,13 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     # TODO: Normalize paths
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
     inserted_lines = {f.replace("\\", "/"): lines for f, lines in inserted_lines.items()}
+
+    config_files = [f for f in {**modified_lines, **inserted_lines}
+                    if _is_config_file(f)]
+    if config_files:
+        logger.info(f"Pytest or project configuration files modified {config_files} — all tests must run")
+        return None
+
     logger.info("Computing tests to run")
     tests = suite_to_run(covdata, modified_lines, inserted_lines, folder)
     logger.info(f"Tests to run: {tests}")

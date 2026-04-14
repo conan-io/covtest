@@ -101,11 +101,12 @@ def main(argv=None):
 
     if args.command == "predict":
         tests = predict_tests(str(folder), args.covtest_file)
+        if tests == -1:
+            logger.error("No covtest base folder found, no covtest data, cannot predict tests")
+            return -1
         if tests is None:
-            print(
-                "covtest: no stored data for this repo/context (run tests with covtest first)",
-                file=sys.stderr,
-            )
+            logger.info(f"Pytest or project configuration files modified all tests must run, "
+                        f"covtest files not generated")
             return 1
 
         # group tests by context:

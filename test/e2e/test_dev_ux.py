@@ -37,6 +37,38 @@ def test_dev_ux_cmd(user_location):
     assert "1 passed in" in out  # Only 1 test!
 
 
+def test_dev_ux_conf_test_files():
+    src_folder = prepare_src_folder("files")
+    c = TestClient(src_folder)
+    # TODO: Force injection of the fixture, any other way???
+    conftest = textwrap.dedent("""\
+        from covtest.pytest_plugin import patch_open
+       """)
+    c.save({"conftest.py": conftest})
+    git_init_repo(src_folder)
+
+    out, err = c.run_cmd("pytest --cov=. --cov-context=test")
+    assert "3 passed" in out
+    file_open = c.load(".covtest/file_open")
+    assert "cities.txt" in file_open
+
+    c.run(f"process .")
+    assert "Processing coverage data" in c.out
+    assert "Processing done" in c.out
+
+    assert os.path.isdir(os.path.join(src_folder, ".covtest"))
+
+    do_code_changes(src_folder, "files/new_city")
+
+    c.run(f"predict .")
+    # Predicted files look ok
+    assert "data_test.py::DataTest::test_cities" == c.load("covtests.tests")
+
+    # Run optimized tests only predicted
+    out, err = c.run_cmd("pytest @covtests.tests", assert_error=True)
+    assert "1 failed in" in out  # Only 1 test!
+
+
 def test_dev_ux_split_testing():
     src_folder = prepare_src_folder("contexts")
     c = TestClient(src_folder)

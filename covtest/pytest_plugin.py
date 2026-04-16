@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from covtest.covtest import covtest_postprocess, predict_tests
+from covtest.covtest import predict_tests
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ def covtest_modifyitems(session, config, items):
     items[:] = [t for t in items if t.nodeid in optimized_tests]
 
 
-def pytest_sessionfinish(session, exitstatus):
-    case_folder = session.startpath
-    covtest_postprocess(case_folder)
+# TODO: It is not very clear when to run post_process automatically
+# def pytest_sessionfinish(session, exitstatus):
+#    case_folder = session.startpath
+#    covtest_postprocess(case_folder)

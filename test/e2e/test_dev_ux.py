@@ -10,6 +10,7 @@ from test.integration.test_cases_utils import prepare_src_folder, git_init_repo,
 
 @pytest.mark.parametrize("user_location", [False, True])
 def test_dev_ux_cmd(user_location):
+    # Explicit commands
     src_folder = prepare_src_folder("mymath")
     c = TestClient(src_folder)
     git_init_repo(src_folder)
@@ -37,17 +38,21 @@ def test_dev_ux_cmd(user_location):
     assert "1 passed in" in out  # Only 1 test!
 
 
-def test_dev_ux_conf_test_files():
+@pytest.mark.parametrize("method", ["conftest", "plugin"])
+def test_dev_ux_conf_test_files(method):
+    # TODO: How to merge different file-open data from different
+    #  contexts?
     src_folder = prepare_src_folder("files")
     c = TestClient(src_folder)
-    # TODO: Force injection of the fixture, any other way???
-    conftest = textwrap.dedent("""\
-        from covtest.pytest_plugin import patch_open
-       """)
-    c.save({"conftest.py": conftest})
+    if method == "conftest":
+        conftest = textwrap.dedent("""\
+            from covtest.pytest_plugin import patch_open
+           """)
+        c.save({"conftest.py": conftest})
     git_init_repo(src_folder)
 
-    out, err = c.run_cmd("pytest --cov=. --cov-context=test")
+    cmd_args = "-p covtest.pytest_plugin" if method == "plugin" else ""
+    out, err = c.run_cmd(f"pytest --cov=. --cov-context=test {cmd_args}")
     assert "3 passed" in out
     file_open = c.load(".covtest/file_open")
     assert "cities.txt" in file_open
@@ -123,17 +128,19 @@ def test_dev_ux_split_testing():
     assert "1 deselected in" in out
 
 
-def test_dev_ux_conftest():
+@pytest.mark.parametrize("method", ["conftest", "plugin"])
+def test_dev_ux_plugin(method):
     # How a dev can run pytest easily via plugin
     src_folder = prepare_src_folder("mymath")
     c = TestClient(src_folder)
-    conftest = textwrap.dedent("""\
-        from covtest.pytest_plugin import covtest_modifyitems
-
-        def pytest_collection_modifyitems(session, config, items):
-            return covtest_modifyitems(session, config, items)
-    """)
-    c.save({"conftest.py": conftest})
+    if method == "conftest":
+        conftest = textwrap.dedent("""\
+            from covtest.pytest_plugin import covtest_modifyitems
+    
+            def pytest_collection_modifyitems(session, config, items):
+                return covtest_modifyitems(session, config, items)
+        """)
+        c.save({"conftest.py": conftest})
     git_init_repo(src_folder)
 
     out, err = c.run_cmd("pytest --cov=. --cov-context=test")
@@ -144,16 +151,15 @@ def test_dev_ux_conftest():
     assert "Processing done" in c.out
     assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 
+    cmd_args = "-p covtest.pytest_plugin" if method == "plugin" else ""
     # Run optimized tests only predicted
     # Without changes, no tests to run
-    out, err = c.run_cmd("pytest", assert_error=True)
-    print("OUT!!!", out, "ERR!!!", err)
-    assert "no tests ran" in out  # Only 1 test!
+    out, err = c.run_cmd(f"pytest {cmd_args}", assert_error=True)
+    assert "no tests ran" in out
 
-    # Modify the Windows-add
+    # Modify the add
     do_code_changes(src_folder, "mymath/fix_add")
 
     # Run optimized tests only predicted
-    out, err = c.run_cmd("pytest")
-    print("OUT!!!", out, "ERR!!!", err)
+    out, err = c.run_cmd(f"pytest {cmd_args}")
     assert "1 passed in" in out  # Only 1 test!

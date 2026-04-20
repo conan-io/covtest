@@ -207,23 +207,43 @@ def covtest_postprocess(folder, covtest_file=None):
         return
 
     if covtest_file is None:
-        covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit)
+        covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit + ".covtest")
     covtest_file = os.path.abspath(covtest_file)
     logger.info(f"Covtest storing data: {covtest_file}")
     cov_test_data.save(covtest_file)
     logger.debug(f"TIME: covtest_post_process {time.time() - t}")
 
 
-def covtest_base_folder(folder):
+def covtest_file_location(folder):
     base_commits = git_commits(folder, 10)
     base_folder = os.path.join(folder, COVTEST_FOLDER)
     for base_commit in base_commits:
-        covtest_folder = os.path.join(base_folder, base_commit)
-        if os.path.exists(covtest_folder):
-            logger.debug(f"Covtest using folder: {covtest_folder}")
-            return covtest_folder, base_commit
-    else:
-        logger.debug("Covtest couldn't find data for previous commits")
+        covtest_file = os.path.join(base_folder, base_commit + ".covtest")
+        if os.path.exists(covtest_file):
+            logger.debug(f"Covtest using file: {covtest_file}")
+            return covtest_file, base_commit
+    logger.debug("Covtest couldn't find data for previous commits")
+
+
+def sync_covtest_data(folder, server_url):
+    """Download covtest data for the nearest base commit from server_url into
+    the local .covtest folder, skipping commits that are already present.
+
+    Returns (local_path, commit) on success, None if nothing was found.
+    """
+    from covtest.remote import download
+    base_commits = git_commits(folder, 10)
+    base_folder = os.path.join(folder, COVTEST_FOLDER)
+    for base_commit in base_commits:
+        local_file = os.path.join(base_folder, base_commit + ".covtest")
+        if os.path.exists(local_file):
+            logger.debug(f"Covtest data already present locally for {base_commit}")
+            return local_file, base_commit
+        downloaded = download(server_url, base_commit, base_folder)
+        if downloaded is not None:
+            return downloaded, base_commit
+    logger.debug("Covtest data not found on server for any recent commit")
+    return None
 
 
 def predict_tests(folder, covtest_file=None, base_diff=""):
@@ -235,7 +255,7 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
         assert base_diff == ""
         # Looking for the covtest data file in the default locations
         # At the moment only local .covtest folder
-        base = covtest_base_folder(folder)
+        base = covtest_file_location(folder)
         if base is None:
             return -1
         covtest_file, base_diff = base

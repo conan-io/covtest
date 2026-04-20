@@ -1,10 +1,12 @@
 import argparse
 import logging
+import os
 import os.path
 import sys
 from pathlib import Path
 
-from covtest.covtest import covtest_postprocess, predict_tests
+from covtest.config import read_server_url
+from covtest.covtest import covtest_postprocess, predict_tests, covtest_file_location, sync_covtest_data
 from covtest.errors import CovTestException
 from covtest.util.files import save
 
@@ -22,6 +24,7 @@ def _parse_args(argv):
     )
     p_process.add_argument(
         "path",
+        nargs="?",
         type=Path,
         help="Project directory containing .coverage",
     )
@@ -43,12 +46,31 @@ def _parse_args(argv):
     )
     p_predict.add_argument(
         "path",
+        nargs="?",
         type=Path,
         help="Project directory",
     )
     p_predict.add_argument(
         "-cf", "--covtest-file",
         help="Covtest fiel location"
+    )
+
+    p_upload = sub.add_parser(
+        "upload",
+        parents=[ctx],
+        help="Upload .covtest data for the current commit to the configured server",
+    )
+    p_upload.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Project directory containing .covtest data",
+    )
+    p_upload.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        help="Enable debug logging",
     )
 
     return parser.parse_args(argv)
@@ -84,7 +106,7 @@ def main(argv=None):
     logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
     logger = logging.getLogger(__name__)
 
-    folder = args.path.resolve()
+    folder = args.path.resolve() if args.path else Path.cwd()
     if not folder.is_dir():
         print(f"Not a directory: {folder}", file=sys.stderr)
         return 1
@@ -99,7 +121,30 @@ def main(argv=None):
         logger.info("Processing done")
         return 0
 
+    if args.command == "upload":
+        from covtest.remote import upload
+        server_url = read_server_url(str(folder))
+        if not server_url:
+            logger.error("No covtest server_url configured. Add it to pyproject.toml [tool.covtest] "
+                         "or pytest.ini as covtest_server.")
+            return 1
+        base = covtest_file_location(str(folder))
+        if base is None:
+            logger.error("No local covtest data found. Run 'covtest process' first.")
+            return 1
+        covtest_file, commit = base
+        try:
+            upload(server_url, commit, covtest_file)
+        except CovTestException as e:
+            logger.error(e)
+            return 1
+        return 0
+
     if args.command == "predict":
+        if not args.covtest_file:
+            server_url = read_server_url(str(folder))
+            if server_url:
+                sync_covtest_data(str(folder), server_url)
         tests = predict_tests(str(folder), args.covtest_file)
         if tests == -1:
             logger.error("No covtest base folder found, no covtest data, cannot predict tests")

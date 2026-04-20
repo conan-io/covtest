@@ -69,8 +69,8 @@ def test_remote_upload_and_download():
     server = _start_file_server(server_root)
     server_url = f"http://127.0.0.1:{server.server_address[1]}"
 
-    # Write server URL into pyproject.toml so CLI commands pick it up
-    c.save({"pyproject.toml": f'[tool.covtest]\nserver_url = "{server_url}"\n'})
+    # Write server URL into covtest.ini so CLI commands and the plugin pick it up
+    c.save({"covtest.ini": f"[covtest]\nserver_url = {server_url}\n"})
 
     try:
         # --- CI side: upload ---

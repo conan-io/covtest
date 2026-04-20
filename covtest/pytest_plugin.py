@@ -4,13 +4,10 @@ import os
 
 import pytest
 
+from covtest.config import read_server_url
 from covtest.covtest import covtest_postprocess, predict_tests, sync_covtest_data
 
 logger = logging.getLogger(__name__)
-
-
-def pytest_addoption(parser):
-    parser.addini("covtest_server", help="URL of the covtest HTTP server", default=None)
 
 
 @pytest.fixture(autouse=True)
@@ -39,10 +36,7 @@ def pytest_collection_modifyitems(session, config, items):
 def covtest_modifyitems(session, config, items):
     case_folder = session.startpath
     context = config.getoption("covtest_context", default=None)
-    try:
-        server_url = config.getini("covtest_server") or None
-    except ValueError:
-        server_url = None
+    server_url = read_server_url(str(case_folder))
     if server_url and not context:
         sync_covtest_data(str(case_folder), server_url)
     optimized_tests = predict_tests(case_folder, context)

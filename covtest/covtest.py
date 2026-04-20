@@ -214,8 +214,28 @@ def covtest_postprocess(folder, covtest_file=None):
     logger.debug(f"TIME: covtest_post_process {time.time() - t}")
 
 
+_NOT_FOUND_CACHE_FILE = "server_not_found.json"
+
+
+def _load_not_found_cache(base_folder):
+    path = os.path.join(base_folder, _NOT_FOUND_CACHE_FILE)
+    if os.path.isfile(path):
+        with open(path) as f:
+            return json.load(f)
+    return {}
+
+
+def _save_not_found_cache(base_folder, cache):
+    path = os.path.join(base_folder, _NOT_FOUND_CACHE_FILE)
+    os.makedirs(base_folder, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(cache, f)
+
+
 def covtest_file_location(folder):
-    base_commits = git_commits(folder, 10)
+    from covtest.config import read_config
+    max_commits = read_config(folder)["max_commits"]
+    base_commits = git_commits(folder, max_commits)
     base_folder = os.path.join(folder, COVTEST_FOLDER)
     for base_commit in base_commits:
         covtest_file = os.path.join(base_folder, base_commit + ".covtest")
@@ -229,20 +249,70 @@ def sync_covtest_data(folder, server_url):
     """Download covtest data for the nearest base commit from server_url into
     the local .covtest folder, skipping commits that are already present.
 
+    Commits not found on the server are recorded in a negative cache inside
+    .covtest/ so repeated invocations skip them immediately.  Each cache entry
+    expires after server_cache_ttl seconds (from covtest.ini, default 3600),
+    after which the server is queried again.
+
     Returns (local_path, commit) on success, None if nothing was found.
     """
+    from covtest.config import read_config
     from covtest.remote import download
-    base_commits = git_commits(folder, 10)
+
+    cfg = read_config(folder)
+    max_commits = cfg["max_commits"]
+    cache_ttl = cfg["server_cache_ttl"]
+
+    base_commits = git_commits(folder, max_commits)
     base_folder = os.path.join(folder, COVTEST_FOLDER)
-    for base_commit in base_commits:
+
+    not_found = _load_not_found_cache(base_folder)
+    now = time.time()
+    cache_modified = False
+
+    # Prune entries for commits no longer in recent history
+    active = set(base_commits)
+    stale = [c for c in not_found if c not in active]
+    if stale:
+        for c in stale:
+            del not_found[c]
+        cache_modified = True
+
+    for gap, base_commit in enumerate(base_commits):
         local_file = os.path.join(base_folder, base_commit + ".covtest")
         if os.path.exists(local_file):
-            logger.debug(f"Covtest data already present locally for {base_commit}")
+            if gap:
+                logger.info(f"Covtest data found locally for commit {base_commit} ({gap} commit(s) back)")
+            else:
+                logger.debug(f"Covtest data already present locally for {base_commit}")
+            if cache_modified:
+                _save_not_found_cache(base_folder, not_found)
             return local_file, base_commit
+
+        cached_at = not_found.get(base_commit)
+        if cached_at is not None and (now - cached_at) < cache_ttl:
+            logger.debug(f"Skipping server check for {base_commit} (cached not-found, "
+                         f"expires in {int(cache_ttl - (now - cached_at))}s)")
+            continue
+
+        logger.info(f"Checking server for covtest data: commit {base_commit} ({gap} commit(s) back)")
         downloaded = download(server_url, base_commit, base_folder)
         if downloaded is not None:
+            logger.info(f"Downloaded covtest data for commit {base_commit} ({gap} commit(s) back)")
+            if base_commit in not_found:
+                del not_found[base_commit]
+                cache_modified = True
+            if cache_modified:
+                _save_not_found_cache(base_folder, not_found)
             return downloaded, base_commit
-    logger.debug("Covtest data not found on server for any recent commit")
+
+        not_found[base_commit] = now
+        cache_modified = True
+
+    if cache_modified:
+        _save_not_found_cache(base_folder, not_found)
+
+    logger.info(f"Covtest data not found on server for the last {len(base_commits)} commit(s)")
     return None
 
 

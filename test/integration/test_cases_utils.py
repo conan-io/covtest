@@ -42,7 +42,9 @@ def git_init_repo(folder):
         run("git init .")
         run("git add .")
         run("git commit -m initial")
+        commit, _ = run('git rev-list HEAD -n 1')
     logger.debug(f"TIME: init_repo {time.time() - t}")
+    return commit
 
 
 def do_code_changes(target, folder):

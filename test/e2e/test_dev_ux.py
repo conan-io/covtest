@@ -13,7 +13,7 @@ def test_dev_ux_cmd(user_location):
     # Explicit commands
     src_folder = prepare_src_folder("mymath")
     c = TestClient(src_folder)
-    git_init_repo(src_folder)
+    commit = git_init_repo(src_folder)
 
     out, err = c.run_cmd("pytest --cov=. --cov-context=test")
     assert "2 passed" in out
@@ -23,7 +23,8 @@ def test_dev_ux_cmd(user_location):
     assert "Processing coverage data" in c.out
     assert "Processing done" in c.out
     if user_location:
-        assert not os.path.isdir(os.path.join(src_folder, ".covtest"))
+        assert not os.path.isdir(os.path.join(src_folder, ".covtest", commit))
+        assert os.path.isfile(os.path.join(src_folder, "mycvfile"))
     else:
         assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 

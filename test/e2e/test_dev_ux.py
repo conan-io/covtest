@@ -163,3 +163,29 @@ def test_dev_ux_plugin(method):
     # Run optimized tests only predicted
     out, err = c.run_cmd(f"pytest {cmd_args}")
     assert "1 passed in" in out  # Only 1 test!
+
+
+def test_dev_ux_full_plugin():
+    # How a dev can run pytest easily via plugin
+    src_folder = prepare_src_folder("mymath")
+    print("SRC FOlder", src_folder)
+    c = TestClient(src_folder)
+    git_init_repo(src_folder)
+
+    out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.pytest_plugin")
+    assert "2 passed" in out
+    assert "Processing coverage data" in out
+    assert "Processing done" in out
+    assert os.path.isdir(os.path.join(src_folder, ".covtest"))
+
+    # Run optimized tests only predicted
+    # Without changes, no tests to run
+    out, err = c.run_cmd("pytest -p covtest.pytest_plugin", assert_error=True)
+    assert "no tests ran" in out
+
+    # Modify the add
+    do_code_changes(src_folder, "mymath/fix_add")
+
+    # Run optimized tests only predicted
+    out, err = c.run_cmd("pytest -p covtest.pytest_plugin")
+    assert "1 passed in" in out  # Only 1 test!

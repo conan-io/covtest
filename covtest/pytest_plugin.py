@@ -4,7 +4,8 @@ import os
 
 import pytest
 
-from covtest.covtest import predict_tests
+from covtest.covtest import covtest_base_folder, covtest_postprocess, predict_tests
+from covtest.git import git_dirty
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,8 @@ def covtest_modifyitems(session, config, items):
     items[:] = [t for t in items if t.nodeid in optimized_tests]
 
 
-# TODO: It is not very clear when to run post_process automatically
-# def pytest_sessionfinish(session, exitstatus):
-#    case_folder = session.startpath
-#    covtest_postprocess(case_folder)
+def pytest_sessionfinish(session, exitstatus):
+    case_folder = str(session.startpath)
+    print("\nProcessing coverage data")
+    covtest_postprocess(case_folder)
+    print("Processing done")

@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Configure git identity
+        run: |
+          git config --global user.email "ci@covtest"
+          git config --global user.name "covtest CI"
+
       - name: Install
         run: pip install -e ".[dev]"
 

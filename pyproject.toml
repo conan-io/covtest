@@ -8,12 +8,36 @@ version = "0.1.0"
 description = "Coverage-guided test selection for pytest"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = [
-    "pytest",
-    "coverage",
-    "pytest-cov",
-    "unidiff",
+license = { text = "Proprietary" }
+authors = [
+    { name = "Diego Rodriguez Losada", email = "diegor@jfrog.com" },
 ]
+keywords = ["pytest", "coverage", "testing", "test-selection", "ci"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Testing",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: Other/Proprietary License",
+]
+dependencies = [
+    "pytest>=7.0",
+    "coverage>=7.0",
+    "pytest-cov>=4.0",
+    "unidiff>=0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Repository = "https://github.com/memsharded/covtest"
 
 [project.scripts]
 covtest = "covtest.cli:main"

@@ -169,7 +169,6 @@ def test_dev_ux_plugin(method):
 def test_dev_ux_full_plugin():
     # How a dev can run pytest easily via plugin
     src_folder = prepare_src_folder("mymath")
-    print("SRC FOlder", src_folder)
     c = TestClient(src_folder)
     git_init_repo(src_folder)
 

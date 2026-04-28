@@ -31,6 +31,14 @@ BREAKING_CHANGES = [
         "replacement": '        files, _ = gather_files(folder)\n        kk\n',
         "description": "Breaking Manifest",
     },
+    {
+        "id": "restapi breaking",
+        "file": "conan/internal/rest/rest_client_v2.py",
+        "line": 113,
+        "original": '        auth = self.auth\n',
+        "replacement": '        auth = self.auth2\n',
+        "description": "Breaking restv2",
+    },
 ]
 
 
@@ -181,18 +189,18 @@ def _get_predicted_tests(repo_dir, venv_python):
 @pytest.mark.benchmark
 @pytest.mark.parametrize("change", BREAKING_CHANGES, ids=lambda c: c["id"])
 def test_covtest_predicts_broken_tests(conan_repo, change):
-    repo_dir    = conan_repo["repo_dir"]
+    repo_dir = conan_repo["repo_dir"]
     venv_python = conan_repo["venv_python"]
     try:
         _apply_change(repo_dir, change)
 
-        broken    = _get_broken_tests(repo_dir, venv_python)
+        broken = _get_broken_tests(repo_dir, venv_python)
         predicted = _get_predicted_tests(repo_dir, venv_python)
 
         tp = predicted & broken
         fn = broken - predicted
         fp = predicted - broken
-        recall    = len(tp) / len(broken)    if broken    else 1.0
+        recall = len(tp) / len(broken) if broken else 1.0
         precision = len(tp) / len(predicted) if predicted else 0.0
 
         print(f"\n[{change['id']}] broken={len(broken)} predicted={len(predicted)} "

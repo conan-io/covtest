@@ -57,7 +57,7 @@ class _ParsedFileData:
                         try:
                             endlineno = n.lineno
                             break
-                        except:
+                        except AttributeError:
                             pass
                     result[child.name] = list(range(child.lineno, endlineno+1))
                     # Do not recurse into function/class bodies

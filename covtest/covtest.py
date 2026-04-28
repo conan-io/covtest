@@ -161,12 +161,12 @@ def suite_to_run(covdata, modified, inserted, folder):
 
 def extract_tests(folder, filename):
     # Tests deduced by pytest
-    result = subprocess.run(f"pytest {filename} --co -q",
+    result = subprocess.run(["pytest", filename, "--co", "-q"],
                             capture_output=True, text=True, cwd=folder)
     stdout = result.stdout
     file_tests = stdout.splitlines()
-    file_tests = file_tests[:file_tests.index("")]
-    return file_tests
+    idx = file_tests.index("") if "" in file_tests else len(file_tests)
+    return file_tests[:idx]
 
 
 def covtest_postprocess(folder, covtest_file=None):
@@ -181,6 +181,8 @@ def covtest_postprocess(folder, covtest_file=None):
     t = time.time()
     cov_data = extract_coverage(folder)
     logger.debug(f"Coverage results:\n{str_nested_dict(cov_data)}")
+    # print_data = {f: d for f, d in cov_data.items() if "rest_client_v2" in f}
+    # print(f"Coverage results:\n{str_nested_dict(print_data)}")
     parse_results = ParsedData(folder)
     # logger.debug(f"Parse results mappings:\n{str_nested_dict(parse_results.line_mappings())}")
     last_failed_file = os.path.join(folder, ".pytest_cache", "v", "cache", "lastfailed")

@@ -87,7 +87,7 @@ def run_pytest(folder, tests=None,  env=None,):
             "-v", f'--cov={folder}', "--cov-context=test"]
     with environment_update(env):
         result = subprocess.run("pytest %s" % " ".join(args), capture_output=True,
-                                cwd=folder)
+                                cwd=folder, shell=True)
     stdout = result.stdout.decode()
     stderr = result.stderr.decode()
 

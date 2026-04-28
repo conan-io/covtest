@@ -2,7 +2,8 @@ import subprocess
 
 
 def run(cmd, ignore_error=False, cwd=None, env=None):
-    result = subprocess.run(cmd, capture_output=True, cwd=cwd, text=True, env=env)
+    result = subprocess.run(cmd, capture_output=True, cwd=cwd, text=True, env=env,
+                            shell=isinstance(cmd, str))
     stdout = result.stdout
     stderr = result.stderr
 

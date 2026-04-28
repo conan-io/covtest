@@ -80,7 +80,7 @@ def extract_coverage(folder):
             clean = [_parse_context(c) for c in context]
             clean = [c for c in clean if c]
             clean_contexts[line] = set(clean)
-        f = os.path.relpath(f, folder)
+        f = os.path.relpath(os.path.realpath(f), os.path.realpath(folder))
         result[f.replace("\\", "/")] = clean_contexts
     return result
 

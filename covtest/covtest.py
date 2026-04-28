@@ -195,7 +195,8 @@ def covtest_postprocess(folder, covtest_file=None):
     if os.path.exists(opened_files):
         opened_files = load(opened_files).splitlines()
         opened_files = [o.split("=") for o in opened_files]
-        opened_files = [[t, os.path.relpath(f, folder)] for (t, f) in opened_files]
+        opened_files = [[t, os.path.relpath(os.path.realpath(f), os.path.realpath(folder))]
+                        for (t, f) in opened_files]
     else:
         opened_files = None
 

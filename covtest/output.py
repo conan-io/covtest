@@ -9,8 +9,6 @@ Call set_verbose(True) once at startup (CLI flag or plugin option) to enable
 the verbose level.
 """
 
-import sys
-
 _verbose = False
 
 

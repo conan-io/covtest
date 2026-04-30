@@ -156,14 +156,14 @@ def test_dev_ux_plugin(method):
     # Run optimized tests only predicted
     # Without changes, no tests to run
     out, err = c.run_cmd(f"pytest {cmd_args}", assert_error=True)
-    assert "no tests ran" in out
+    assert "2 deselected" in out
 
     # Modify the add
     do_code_changes(src_folder, "mymath/fix_add")
 
     # Run optimized tests only predicted
     out, err = c.run_cmd(f"pytest {cmd_args}")
-    assert "1 passed in" in out  # Only 1 test!
+    assert "1 passed, 1 deselected in" in out  # Only 1 test!
 
 
 def test_dev_ux_full_plugin():
@@ -181,11 +181,11 @@ def test_dev_ux_full_plugin():
     # Run optimized tests only predicted
     # Without changes, no tests to run
     out, err = c.run_cmd("pytest -p covtest.predict", assert_error=True)
-    assert "no tests ran" in out
+    assert "2 deselected" in out
 
     # Modify the add
     do_code_changes(src_folder, "mymath/fix_add")
 
     # Run optimized tests only predicted
     out, err = c.run_cmd("pytest -p covtest.predict")
-    assert "1 passed in" in out  # Only 1 test!
+    assert "1 passed, 1 deselected in" in out  # Only 1 test!

@@ -1,0 +1,90 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+{{ super() }}
+
+<section class="ct-hero">
+  <div class="ct-hero__inner">
+
+    <div class="ct-hero__text">
+      <div class="ct-hero__badge">AI-native test selection</div>
+      <h1 class="ct-hero__title">Run only the tests<br>that <span class="ct-hero__accent">matter</span>.</h1>
+      <p class="ct-hero__subtitle">
+        covtest maps every test to every line it covers.<br>
+        When you change code, it selects the exact tests affected —<br>
+        in seconds, not minutes.
+      </p>
+      <div class="ct-hero__cta">
+        <a href="{{ 'getting-started/' | url }}" class="ct-btn ct-btn--primary">Get started</a>
+        <a href="{{ 'concepts/' | url }}" class="ct-btn ct-btn--secondary">How it works</a>
+      </div>
+    </div>
+
+    <div class="ct-hero__terminal">
+      <div class="ct-terminal">
+        <div class="ct-terminal__bar">
+          <span class="ct-terminal__dot ct-terminal__dot--red"></span>
+          <span class="ct-terminal__dot ct-terminal__dot--yellow"></span>
+          <span class="ct-terminal__dot ct-terminal__dot--green"></span>
+          <span class="ct-terminal__title">terminal</span>
+        </div>
+        <div class="ct-terminal__body">
+          <div class="ct-terminal__line ct-terminal__line--delay-0"><span class="ct-prompt">$</span> pytest -p covtest.predict</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-1"><span class="ct-info">covtest:</span> predicting tests</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-2 ct-terminal__line--dim">  load snapshot    :   2.9s</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-3 ct-terminal__line--dim">  compute diff     :   0.2s  (1 file, 3 lines changed)</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-4 ct-terminal__line--dim">  select tests     :   0.1s  (2 tests selected)</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-5"><span class="ct-info">covtest:</span> selected 2 test(s)</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-6"><span class="ct-prompt">$</span> pytest @.covtest/covtests.tests</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-7 ct-terminal__line--pass">.. [100%]</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-8 ct-terminal__line--pass">2 passed in 1.3s</div>
+          <div class="ct-terminal__line ct-terminal__line--delay-9 ct-terminal__line--muted"># full suite: 4 847 tests, 6m 14s</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="ct-pillars">
+  <div class="ct-pillars__inner">
+
+    <div class="ct-pillar">
+      <div class="ct-pillar__icon">⚡</div>
+      <h3 class="ct-pillar__title">Seconds, not minutes</h3>
+      <p class="ct-pillar__body">
+        Select 2 tests from 5 000 in under 4 seconds.
+        CI queues shrink. Developer feedback loops close.
+        The bottleneck moves back to where it belongs — your code.
+      </p>
+    </div>
+
+    <div class="ct-pillar">
+      <div class="ct-pillar__icon">🤖</div>
+      <h3 class="ct-pillar__title">Built for agentic loops</h3>
+      <p class="ct-pillar__body">
+        AI coding agents make dozens of small changes per session.
+        Without fast test selection, the test suite becomes the bottleneck
+        that stalls every iteration. covtest gives agents instant signal.
+      </p>
+    </div>
+
+    <div class="ct-pillar">
+      <div class="ct-pillar__icon">🎯</div>
+      <h3 class="ct-pillar__title">No false negatives</h3>
+      <p class="ct-pillar__body">
+        Prediction is line-level, derived from real coverage data.
+        If a test never executed a changed line, it is not selected — ever.
+        Safety comes from data, not heuristics.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+{% endblock %}
+
+{% block content %}{% endblock %}
+{% block footer %}
+{{ super() }}
+{% endblock %}

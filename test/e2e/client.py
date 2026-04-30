@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from contextlib import contextmanager
 
@@ -52,7 +53,7 @@ class TestClient:
             cmd = cmd.split(" ")
         cmd = [c for c in cmd if c]
 
-        # Get the ROOT logger (no name)
+        # Capture logger output
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.DEBUG)
         log_buffer = io.StringIO()
@@ -60,13 +61,19 @@ class TestClient:
         root_logger.handlers = []
         root_logger.addHandler(handler)
 
+        # Capture stdout (print() calls)
+        stdout_buffer = io.StringIO()
+
         cwd = os.getcwd()
+        old_stdout = sys.stdout
         try:
             os.chdir(self.cwd)
+            sys.stdout = stdout_buffer
             result = main(cmd)
         finally:
+            sys.stdout = old_stdout
             os.chdir(cwd)
-        self.out = log_buffer.getvalue()
+        self.out = log_buffer.getvalue() + stdout_buffer.getvalue()
 
         if result == 0 and assert_error:
             raise Exception(f"Failure expected {cwd}\n{self.out}\n")

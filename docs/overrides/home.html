@@ -82,6 +82,47 @@
   </div>
 </section>
 
+
+<section class="ct-demos">
+  <div class="ct-demos__inner">
+
+    <h2 class="ct-demos__heading">See it in action</h2>
+
+    <div class="ct-demo-grid">
+
+      <div class="ct-demo-card">
+        <h3 class="ct-demo-card__title">
+          <span class="ct-demo-card__step">01</span>
+          Build the snapshot
+        </h3>
+        <p class="ct-demo-card__desc">
+          Run your full suite once with coverage contexts.
+          <code>covtest process</code> reads the data and stores a compact snapshot
+          tied to the current commit.
+        </p>
+        <div class="ct-demo-card__gif">
+          <img src="{{ 'assets/demo-process.gif' | url }}" alt="covtest process -v output" loading="lazy"/>
+        </div>
+      </div>
+
+      <div class="ct-demo-card">
+        <h3 class="ct-demo-card__title">
+          <span class="ct-demo-card__step">02</span>
+          Predict on every change
+        </h3>
+        <p class="ct-demo-card__desc">
+          Edit a file, run <code>covtest predict</code> (or <code>pytest -p covtest.predict</code>).
+          Only the tests that cover the changed lines are selected — in seconds.
+        </p>
+        <div class="ct-demo-card__gif">
+          <img src="{{ 'assets/demo-predict.gif' | url }}" alt="covtest predict -v output" loading="lazy"/>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
 {% endblock %}
 
 {% block content %}{% endblock %}

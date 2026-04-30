@@ -46,12 +46,7 @@ This reads `.coverage` and writes `.covtest/<commit-hash>.covtest` — a compact
 !!! note
     `covtest process` must be run on a **clean git commit**. If the working tree is dirty, covtest skips saving the snapshot (it cannot tie the data to a stable reference point).
 
-You should see:
-
-```
-covtest: processing coverage data
-covtest: done
-```
+![covtest process demo](assets/demo-process.gif)
 
 Add `-v` for per-step timing:
 
@@ -85,10 +80,7 @@ covtest predict
 
 covtest diffs the working tree against the snapshot commit and writes the affected test IDs to `.covtest/covtests.tests`:
 
-```
-covtest: predicting tests
-covtest: done
-```
+![covtest predict demo](assets/demo-predict.gif)
 
 ---
 

@@ -32,10 +32,10 @@ def test_dev_ux_cmd(user_location):
 
     c.run(f"predict . {file_arg}")
     # Predicted files look ok
-    assert "mymath_test.py::MyMathTest::test_add" == c.load("covtests.tests")
+    assert "mymath_test.py::MyMathTest::test_add" == c.load(".covtest/covtests.tests")
 
     # Run optimized tests only predicted
-    out, err = c.run_cmd("pytest @covtests.tests")
+    out, err = c.run_cmd("pytest @.covtest/covtests.tests")
     assert "1 passed in" in out  # Only 1 test!
 
 
@@ -68,10 +68,10 @@ def test_dev_ux_conf_test_files(method):
 
     c.run(f"predict .")
     # Predicted files look ok
-    assert "data_test.py::DataTest::test_cities" == c.load("covtests.tests")
+    assert "data_test.py::DataTest::test_cities" == c.load(".covtest/covtests.tests")
 
     # Run optimized tests only predicted
-    out, err = c.run_cmd("pytest @covtests.tests", assert_error=True)
+    out, err = c.run_cmd("pytest @.covtest/covtests.tests", assert_error=True)
     assert "1 failed in" in out  # Only 1 test!
 
 
@@ -119,13 +119,13 @@ def test_dev_ux_split_testing():
 
     c.run(f"predict .")
     # Predicted files look ok
-    assert "mymath_test.py::MyMathTest::test_add" == c.load("covtests.windows.tests")
+    assert "mymath_test.py::MyMathTest::test_add" == c.load(".covtest/covtests.windows.tests")
 
     # Run optimized tests only predicted
-    out, err = c.run_cmd("pytest @covtests.windows.tests -m windows")
+    out, err = c.run_cmd("pytest @.covtest/covtests.windows.tests -m windows")
     assert "1 passed in" in out  # Only 1 test!
 
-    out, err = c.run_cmd("pytest @covtests.windows.tests -m linux", assert_error=True)
+    out, err = c.run_cmd("pytest @.covtest/covtests.windows.tests -m linux", assert_error=True)
     assert "1 deselected in" in out
 
 

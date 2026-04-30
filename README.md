@@ -50,12 +50,13 @@ This reads `.coverage` and writes `.covtest/<commit>.covtest`.
 covtest predict
 ```
 
-covtest writes the affected test IDs to `covtests.tests` (one per line).
+covtest writes the affected test IDs to `.covtest/covtests.tests` (one per line).
 
 ### Step 4 — run only the affected tests
 
 ```bash
-pytest $(cat covtests.tests)
+pytest $(cat .covtest/covtests.tests)   # Linux / macOS
+pytest @.covtest/covtests.tests         # Windows
 ```
 
 ---

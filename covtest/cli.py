@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 from covtest.config import read_server_url
-from covtest.covtest import covtest_postprocess, predict_tests, covtest_file_location, sync_covtest_data
+from covtest.covtest import covtest_postprocess, predict_tests, covtest_file_location, sync_covtest_data, \
+    COVTEST_FOLDER
 from covtest.errors import CovTestException
 from covtest.util.files import save
 
@@ -164,7 +165,7 @@ def main(argv=None):
 
         for context, tests in contexts.items():
             f = "covtests.tests" if not context else f"covtests.{context}.tests"
-            filename = os.path.abspath(f)
+            filename = os.path.join(str(folder), COVTEST_FOLDER, f)
             save(filename, "\n".join(sorted(tests)))
             logging.info(f"Saved tests to run in: {filename}")
         return 0

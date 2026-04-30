@@ -59,7 +59,7 @@ def test_remote_upload_and_download():
     assert "2 passed" in out
 
     c.run("process")
-    assert "Processing done" in c.out
+    assert "covtest: done" in c.out
 
     covtest_dir = os.path.join(src_folder, ".covtest")
     assert os.path.isfile(os.path.join(covtest_dir, f"{commit}.covtest"))

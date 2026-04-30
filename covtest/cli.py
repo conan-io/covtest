@@ -9,6 +9,7 @@ from covtest.config import read_server_url
 from covtest.covtest import covtest_postprocess, predict_tests, covtest_file_location, sync_covtest_data, \
     COVTEST_FOLDER
 from covtest.errors import CovTestException
+from covtest.output import out_info, out_verbose, set_verbose
 from covtest.util.files import save
 
 
@@ -31,13 +32,12 @@ def _parse_args(argv):
     )
     p_process.add_argument(
         "-cf", "--covtest-file",
-        help="Covtest fiel location"
+        help="Covtest file location"
     )
     p_process.add_argument(
-        "--verbose",
-        "-v",
+        "--verbose", "-v",
         action="store_true",
-        help="Enable debug logging",
+        help="Show per-step timing and debug logging",
     )
 
     p_predict = sub.add_parser(
@@ -53,7 +53,12 @@ def _parse_args(argv):
     )
     p_predict.add_argument(
         "-cf", "--covtest-file",
-        help="Covtest fiel location"
+        help="Covtest file location"
+    )
+    p_predict.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show per-step timing and debug logging",
     )
 
     p_upload = sub.add_parser(
@@ -68,10 +73,9 @@ def _parse_args(argv):
         help="Project directory containing .covtest data",
     )
     p_upload.add_argument(
-        "--verbose",
-        "-v",
+        "--verbose", "-v",
         action="store_true",
-        help="Enable debug logging",
+        help="Show debug logging",
     )
 
     return parser.parse_args(argv)
@@ -103,7 +107,9 @@ def _split_context_test(t):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    level = logging.DEBUG if getattr(args, "verbose", False) else logging.INFO
+    verbose = getattr(args, "verbose", False)
+    set_verbose(verbose)
+    level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
     logger = logging.getLogger(__name__)
 
@@ -113,25 +119,26 @@ def main(argv=None):
         return 1
 
     if args.command == "process":
-        print("Processing coverage data")
+        out_info("processing coverage data")
         try:
             covtest_postprocess(str(folder), args.covtest_file)
         except CovTestException as e:
             logger.error(e)
             return -1
-        print("Processing done")
+        out_info("done")
         return 0
 
     if args.command == "upload":
         from covtest.remote import upload
         server_url = read_server_url(str(folder))
         if not server_url:
-            logger.error("No covtest server_url configured. Add it to pyproject.toml [tool.covtest] "
-                         "or pytest.ini as covtest_server.")
+            print("covtest error: no server_url configured. Add it to pyproject.toml [tool.covtest] "
+                  "or pytest.ini as covtest_server.", file=sys.stderr)
             return 1
         base = covtest_file_location(str(folder))
         if base is None:
-            logger.error("No local covtest data found. Run 'covtest process' first.")
+            print("covtest error: no local covtest data found. Run 'covtest process' first.",
+                  file=sys.stderr)
             return 1
         covtest_file, commit = base
         try:
@@ -142,18 +149,18 @@ def main(argv=None):
         return 0
 
     if args.command == "predict":
-        print("Predicting tests")
+        out_info("predicting tests")
         if not args.covtest_file:
             server_url = read_server_url(str(folder))
             if server_url:
                 sync_covtest_data(str(folder), server_url)
         tests = predict_tests(str(folder), args.covtest_file)
         if tests == -1:
-            logger.error("No covtest base folder found, no covtest data, cannot predict tests")
+            print("covtest error: no covtest data found — run 'covtest process' first.",
+                  file=sys.stderr)
             return -1
         if tests is None:
-            logger.info(f"Pytest or project configuration files modified all tests must run, "
-                        f"covtest files not generated")
+            out_info("configuration file changed — all tests must run, no covtests.tests written")
             return 1
 
         # group tests by context:
@@ -162,14 +169,12 @@ def main(argv=None):
             context, test = _split_context_test(t)
             contexts.setdefault(context, []).append(test)
 
-        # print('CONTEXTS!!', "\n".join(contexts.keys()))
-
         for context, tests in contexts.items():
             f = "covtests.tests" if not context else f"covtests.{context}.tests"
             filename = os.path.join(str(folder), COVTEST_FOLDER, f)
             save(filename, "\n".join(sorted(tests)))
-            print(f"  saved {len(tests)} tests -> {filename}")
-        print("Prediction done")
+            out_verbose(f"saved {len(tests)} tests -> {filename}")
+        out_info("done")
         return 0
 
     raise AssertionError(f"unknown command: {args.command}")

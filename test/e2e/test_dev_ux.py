@@ -20,8 +20,8 @@ def test_dev_ux_cmd(user_location):
 
     file_arg = "--covtest-file=mycvfile" if user_location else ""
     c.run(f"process . {file_arg}")
-    assert "Processing coverage data" in c.out
-    assert "Processing done" in c.out
+    assert "covtest: processing coverage data" in c.out
+    assert "covtest: done" in c.out
     if user_location:
         assert not os.path.isdir(os.path.join(src_folder, ".covtest", commit))
         assert os.path.isfile(os.path.join(src_folder, "mycvfile"))
@@ -59,8 +59,8 @@ def test_dev_ux_conf_test_files(method):
     assert "cities.txt" in file_open
 
     c.run(f"process .")
-    assert "Processing coverage data" in c.out
-    assert "Processing done" in c.out
+    assert "covtest: processing coverage data" in c.out
+    assert "covtest: done" in c.out
 
     assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 
@@ -112,8 +112,8 @@ def test_dev_ux_split_testing():
 
     c.mv("tmp/.coverage", ".coverage")
     c.run("process . ")
-    assert "Processing coverage data" in c.out
-    assert "Processing done" in c.out
+    assert "covtest: processing coverage data" in c.out
+    assert "covtest: done" in c.out
 
     do_code_changes(src_folder, "contexts/fix_add_win")
 
@@ -148,8 +148,8 @@ def test_dev_ux_plugin(method):
     assert "2 passed" in out
 
     c.run(f"process .")
-    assert "Processing coverage data" in c.out
-    assert "Processing done" in c.out
+    assert "covtest: processing coverage data" in c.out
+    assert "covtest: done" in c.out
     assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 
     cmd_args = "-p covtest.predict" if method == "plugin" else ""
@@ -174,8 +174,8 @@ def test_dev_ux_full_plugin():
 
     out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.predict -p covtest.process")
     assert "2 passed" in out
-    assert "Processing coverage data" in out
-    assert "Processing done" in out
+    assert "covtest: processing coverage data" in out
+    assert "covtest: done" in out
     assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 
     # Run optimized tests only predicted

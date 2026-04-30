@@ -12,6 +12,7 @@ from covtest.ast_parser import ParsedData
 from covtest.diff import diff
 from covtest.errors import CovTestException
 from covtest.git import git_commits, git_diff, git_dirty
+from covtest.output import out_verbose
 from covtest.util.files import load, chdir
 
 logger = logging.getLogger(__name__)
@@ -161,11 +162,14 @@ def suite_to_run(covdata, modified, inserted, folder):
 
 def extract_tests(folder, filename):
     # Tests deduced by pytest
-    result = subprocess.run(["pytest", filename, "--co", "-q"],
+    out_verbose(f"Running pytest -co -q collection to gather tests from {folder}/{filename}")
+    t = time.time()
+    result = subprocess.run(["pytest", filename, "--collect-only", "-q"],
                             capture_output=True, text=True, cwd=folder)
     stdout = result.stdout
     file_tests = stdout.splitlines()
     idx = file_tests.index("") if "" in file_tests else len(file_tests)
+    out_verbose(f"Extracted tests : {time.time() - t:5.1f}s  ({idx} tests found)")
     return file_tests[:idx]
 
 
@@ -179,16 +183,16 @@ def covtest_postprocess(folder, covtest_file=None):
     """
     t0 = time.time()
 
-    print("  extracting coverage data ...")
+    out_verbose("extracting coverage data ...")
     t = time.time()
     cov_data = extract_coverage(folder)
     logger.debug(f"Coverage results:\n{str_nested_dict(cov_data)}")
-    print(f"  extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
+    out_verbose(f"extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
 
-    print("  parsing source files ...")
+    out_verbose("parsing source files ...")
     t = time.time()
     parse_results = ParsedData(folder)
-    print(f"  parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
+    out_verbose(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
 
     last_failed_file = os.path.join(folder, ".pytest_cache", "v", "cache", "lastfailed")
     last_failed = None
@@ -205,29 +209,29 @@ def covtest_postprocess(folder, covtest_file=None):
     else:
         opened_files = None
 
-    print("  building coverage mappings ...")
+    out_verbose("building coverage mappings ...")
     t = time.time()
     # TODO: incremental update of covtestdata
     cov_test_data = CovTestData.create(cov_data, parse_results, last_failed, opened_files)
     logger.debug(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
-    print(f"  build mappings   : {time.time() - t:5.1f}s")
+    out_verbose(f"build mappings   : {time.time() - t:5.1f}s")
 
     base_commit = git_commits(folder, 1)[0]
     if git_dirty(folder):  # In case it is dirty
         logger.debug(f"Covtest not storing data because repo is dirty: {folder}")
-        print(f"  total            : {time.time() - t0:5.1f}s  (dirty repo, snapshot not saved)")
+        out_verbose(f"total            : {time.time() - t0:5.1f}s  (dirty repo, snapshot not saved)")
         return
 
     if covtest_file is None:
         covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit + ".covtest")
     covtest_file = os.path.abspath(covtest_file)
 
-    print("  saving snapshot ...")
+    out_verbose("saving snapshot ...")
     t = time.time()
     cov_test_data.save(covtest_file)
-    print(f"  save snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
+    out_verbose(f"save snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
 
-    print(f"  total            : {time.time() - t0:5.1f}s")
+    out_verbose(f"total            : {time.time() - t0:5.1f}s")
 
 
 _NOT_FOUND_CACHE_FILE = "server_not_found.json"
@@ -332,7 +336,7 @@ def sync_covtest_data(folder, server_url):
     return None
 
 
-def predict_tests(folder, covtest_file=None, base_diff=""):
+def predict_tests(folder, covtest_file=None, base_diff="", tests=None):
     """ get the stored coverage data in our DB,
     feeding the modified lines from git diff, will output the
     tests that need to be run
@@ -348,12 +352,12 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
             return -1
         covtest_file, base_diff = base
 
-    print("  loading snapshot ...")
+    out_verbose("loading snapshot ...")
     t = time.time()
     covdata = CovTestData.load(covtest_file)
-    print(f"  load snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
+    out_verbose(f"load snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
 
-    print("  computing git diff ...")
+    out_verbose("computing git diff ...")
     t = time.time()
     text_diff = git_diff(folder, base_diff)
     logger.debug(f"git diff\n{text_diff}")
@@ -364,7 +368,7 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
     inserted_lines = {f.replace("\\", "/"): lines for f, lines in inserted_lines.items()}
     n_changed = sum(len(l) for l in modified_lines.values()) + sum(len(l) for l in inserted_lines.values())
-    print(f"  compute diff     : {time.time() - t:5.1f}s  ({len({**modified_lines, **inserted_lines})} files, {n_changed} lines changed)")
+    out_verbose(f"compute diff     : {time.time() - t:5.1f}s  ({len({**modified_lines, **inserted_lines})} files, {n_changed} lines changed)")
 
     config_files = [f for f in {**modified_lines, **inserted_lines}
                     if _is_config_file(f)]
@@ -372,10 +376,10 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
         logger.info(f"Pytest or project configuration files modified {config_files} — all tests must run")
         return None
 
-    print("  selecting tests ...")
+    out_verbose("selecting tests ...")
     t = time.time()
     tests = suite_to_run(covdata, modified_lines, inserted_lines, folder)
-    print(f"  select tests     : {time.time() - t:5.1f}s  ({len(tests)} tests selected)")
+    out_verbose(f"select tests     : {time.time() - t:5.1f}s  ({len(tests)} tests selected)")
 
-    print(f"  total            : {time.time() - t0:5.1f}s")
+    out_verbose(f"total            : {time.time() - t0:5.1f}s")
     return tests

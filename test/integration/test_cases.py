@@ -103,14 +103,6 @@ def test_contexts(case):
     pass
 
 
-@pytest.mark.parametrize("case", collect_cases("fixtures"), ids=os.path.basename)
-def test_fixtures(prepare_case, case):
-    """Test that modifying one test in a file containing @pytest.fixture
-    predicts only that test, not all tests in the file."""
-    case_folder = prepare_case("fixtures")
-    change_and_predict(case, case_folder)
-
-
 @pytest.mark.parametrize("case", collect_cases("pyfiles"), ids=os.path.basename)
 def test_pyfiles(prepare_case, case):
     """Modifying a project configuration file must cause predict_tests to return

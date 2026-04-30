@@ -61,19 +61,42 @@ pytest @.covtest/covtests.tests         # Windows
 
 ---
 
-## Plugin mode (automatic)
+## Plugin mode
 
-Instead of running the three steps manually, you can let covtest drive everything through its pytest plugin.
+covtest ships two independent pytest plugins that can be used together or separately.
 
-Add to `conftest.py`:
+### Predict only (fast — normal dev loop)
 
-```python
-pytest_plugins = ["covtest.pytest_plugin"]
+```bash
+pytest -p covtest.predict
 ```
 
-Now a single `pytest` invocation will:
-1. Before collection — predict affected tests and skip the rest.
-2. After the session — process the new coverage data automatically.
+Filters the collected tests down to only those affected by your current changes. On the first run (no `.covtest` data yet) all tests execute normally.
+
+You can also wire it permanently via `conftest.py`:
+
+```python
+from covtest.predict import covtest_modifyitems
+
+def pytest_collection_modifyitems(session, config, items):
+    return covtest_modifyitems(session, config, items)
+```
+
+### Process (collect coverage and update snapshot)
+
+```bash
+pytest --cov=mypackage --cov-context=test -p covtest.process
+```
+
+Tracks which files each test opens (`patch_open` fixture) and, after the session, reads `.coverage` and writes an updated `.covtest` snapshot. Requires a clean git commit — aborts with a message if the working tree is dirty.
+
+### Combined (full automatic mode)
+
+```bash
+pytest --cov=mypackage --cov-context=test -p covtest.predict -p covtest.process
+```
+
+Predicts which tests to run **and** refreshes the snapshot afterwards in one invocation. Typical usage: run this after merging or rebasing to keep the snapshot current, then use `-p covtest.predict` alone during normal development.
 
 On the first run (no `.covtest` data yet) all tests execute normally.
 

@@ -47,12 +47,12 @@ def test_dev_ux_conf_test_files(method):
     c = TestClient(src_folder)
     if method == "conftest":
         conftest = textwrap.dedent("""\
-            from covtest.pytest_plugin import patch_open
+            from covtest.process import patch_open
            """)
         c.save({"conftest.py": conftest})
     git_init_repo(src_folder)
 
-    cmd_args = "-p covtest.pytest_plugin --covtest-process" if method == "plugin" else ""
+    cmd_args = "-p covtest.process" if method == "plugin" else ""
     out, err = c.run_cmd(f"pytest --cov=. --cov-context=test {cmd_args}")
     assert "3 passed" in out
     file_open = c.load(".covtest/file_open")
@@ -136,8 +136,8 @@ def test_dev_ux_plugin(method):
     c = TestClient(src_folder)
     if method == "conftest":
         conftest = textwrap.dedent("""\
-            from covtest.pytest_plugin import covtest_modifyitems
-    
+            from covtest.predict import covtest_modifyitems
+
             def pytest_collection_modifyitems(session, config, items):
                 return covtest_modifyitems(session, config, items)
         """)
@@ -152,7 +152,7 @@ def test_dev_ux_plugin(method):
     assert "Processing done" in c.out
     assert os.path.isdir(os.path.join(src_folder, ".covtest"))
 
-    cmd_args = "-p covtest.pytest_plugin" if method == "plugin" else ""
+    cmd_args = "-p covtest.predict" if method == "plugin" else ""
     # Run optimized tests only predicted
     # Without changes, no tests to run
     out, err = c.run_cmd(f"pytest {cmd_args}", assert_error=True)
@@ -172,7 +172,7 @@ def test_dev_ux_full_plugin():
     c = TestClient(src_folder)
     git_init_repo(src_folder)
 
-    out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.pytest_plugin --covtest-process")
+    out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.predict -p covtest.process")
     assert "2 passed" in out
     assert "Processing coverage data" in out
     assert "Processing done" in out
@@ -180,12 +180,12 @@ def test_dev_ux_full_plugin():
 
     # Run optimized tests only predicted
     # Without changes, no tests to run
-    out, err = c.run_cmd("pytest -p covtest.pytest_plugin", assert_error=True)
+    out, err = c.run_cmd("pytest -p covtest.predict", assert_error=True)
     assert "no tests ran" in out
 
     # Modify the add
     do_code_changes(src_folder, "mymath/fix_add")
 
     # Run optimized tests only predicted
-    out, err = c.run_cmd("pytest -p covtest.pytest_plugin")
+    out, err = c.run_cmd("pytest -p covtest.predict")
     assert "1 passed in" in out  # Only 1 test!

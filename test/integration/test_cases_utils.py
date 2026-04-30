@@ -83,8 +83,8 @@ def run_pytest(folder, tests=None,  env=None,):
     logger.debug("++++++ Launching pytest %s", tests)
 
     folder = folder.replace("\\", "/")
-    args = [tests, "-p covtest.pytest_plugin", "--log-cli-level=DEBUG",
-            "-v", f'--cov={folder}', "--cov-context=test", "--covtest-process"]
+    args = [tests, "-p covtest.process", "--log-cli-level=DEBUG",
+            "-v", f'--cov={folder}', "--cov-context=test",]
     with environment_update(env):
         result = subprocess.run("pytest %s" % " ".join(args), capture_output=True,
                                 cwd=folder, shell=True)

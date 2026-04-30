@@ -176,15 +176,20 @@ def covtest_postprocess(folder, covtest_file=None):
     from the data_files (captured while running the suite)
     :param folder: containing the .coverage file
     :param covtest_file: file with covtest information
-    :return: None
     """
+    t0 = time.time()
+
+    print("  extracting coverage data ...")
     t = time.time()
     cov_data = extract_coverage(folder)
     logger.debug(f"Coverage results:\n{str_nested_dict(cov_data)}")
-    # print_data = {f: d for f, d in cov_data.items() if "rest_client_v2" in f}
-    # print(f"Coverage results:\n{str_nested_dict(print_data)}")
+    print(f"  extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
+
+    print("  parsing source files ...")
+    t = time.time()
     parse_results = ParsedData(folder)
-    # logger.debug(f"Parse results mappings:\n{str_nested_dict(parse_results.line_mappings())}")
+    print(f"  parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
+
     last_failed_file = os.path.join(folder, ".pytest_cache", "v", "cache", "lastfailed")
     last_failed = None
     if os.path.exists(last_failed_file):
@@ -200,21 +205,29 @@ def covtest_postprocess(folder, covtest_file=None):
     else:
         opened_files = None
 
+    print("  building coverage mappings ...")
+    t = time.time()
     # TODO: incremental update of covtestdata
     cov_test_data = CovTestData.create(cov_data, parse_results, last_failed, opened_files)
     logger.debug(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
+    print(f"  build mappings   : {time.time() - t:5.1f}s")
 
     base_commit = git_commits(folder, 1)[0]
     if git_dirty(folder):  # In case it is dirty
         logger.debug(f"Covtest not storing data because repo is dirty: {folder}")
+        print(f"  total            : {time.time() - t0:5.1f}s  (dirty repo, snapshot not saved)")
         return
 
     if covtest_file is None:
         covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit + ".covtest")
     covtest_file = os.path.abspath(covtest_file)
-    logger.info(f"Covtest storing data: {covtest_file}")
+
+    print("  saving snapshot ...")
+    t = time.time()
     cov_test_data.save(covtest_file)
-    logger.debug(f"TIME: covtest_post_process {time.time() - t}")
+    print(f"  save snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
+
+    print(f"  total            : {time.time() - t0:5.1f}s")
 
 
 _NOT_FOUND_CACHE_FILE = "server_not_found.json"
@@ -324,6 +337,8 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     feeding the modified lines from git diff, will output the
     tests that need to be run
     """
+    t0 = time.time()
+
     if covtest_file is None:
         assert base_diff == ""
         # Looking for the covtest data file in the default locations
@@ -333,9 +348,13 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
             return -1
         covtest_file, base_diff = base
 
+    print("  loading snapshot ...")
+    t = time.time()
     covdata = CovTestData.load(covtest_file)
+    print(f"  load snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
 
-    logger.info("Computing current diff")
+    print("  computing git diff ...")
+    t = time.time()
     text_diff = git_diff(folder, base_diff)
     logger.debug(f"git diff\n{text_diff}")
     modified_lines, inserted_lines = diff(text_diff)
@@ -344,6 +363,8 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     # TODO: Normalize paths
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
     inserted_lines = {f.replace("\\", "/"): lines for f, lines in inserted_lines.items()}
+    n_changed = sum(len(l) for l in modified_lines.values()) + sum(len(l) for l in inserted_lines.values())
+    print(f"  compute diff     : {time.time() - t:5.1f}s  ({len({**modified_lines, **inserted_lines})} files, {n_changed} lines changed)")
 
     config_files = [f for f in {**modified_lines, **inserted_lines}
                     if _is_config_file(f)]
@@ -351,7 +372,10 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
         logger.info(f"Pytest or project configuration files modified {config_files} — all tests must run")
         return None
 
-    logger.info("Computing tests to run")
+    print("  selecting tests ...")
+    t = time.time()
     tests = suite_to_run(covdata, modified_lines, inserted_lines, folder)
-    logger.info(f"Tests to run: {tests}")
+    print(f"  select tests     : {time.time() - t:5.1f}s  ({len(tests)} tests selected)")
+
+    print(f"  total            : {time.time() - t0:5.1f}s")
     return tests

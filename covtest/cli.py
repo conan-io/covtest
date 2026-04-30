@@ -113,13 +113,13 @@ def main(argv=None):
         return 1
 
     if args.command == "process":
-        logger.info("Processing coverage data")
+        print("Processing coverage data")
         try:
             covtest_postprocess(str(folder), args.covtest_file)
         except CovTestException as e:
             logger.error(e)
             return -1
-        logger.info("Processing done")
+        print("Processing done")
         return 0
 
     if args.command == "upload":
@@ -142,6 +142,7 @@ def main(argv=None):
         return 0
 
     if args.command == "predict":
+        print("Predicting tests")
         if not args.covtest_file:
             server_url = read_server_url(str(folder))
             if server_url:
@@ -167,7 +168,8 @@ def main(argv=None):
             f = "covtests.tests" if not context else f"covtests.{context}.tests"
             filename = os.path.join(str(folder), COVTEST_FOLDER, f)
             save(filename, "\n".join(sorted(tests)))
-            logging.info(f"Saved tests to run in: {filename}")
+            print(f"  saved {len(tests)} tests -> {filename}")
+        print("Prediction done")
         return 0
 
     raise AssertionError(f"unknown command: {args.command}")

@@ -42,5 +42,8 @@ Repository = "https://github.com/memsharded/covtest"
 [project.scripts]
 covtest = "covtest.cli:main"
 
+[project.entry-points."pytest11"]
+covtest = "covtest.pytest_plugin"
+
 [tool.setuptools.packages.find]
 include = ["covtest*"]

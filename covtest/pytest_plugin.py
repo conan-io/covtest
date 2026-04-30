@@ -6,12 +6,34 @@ import pytest
 
 from covtest.config import read_server_url
 from covtest.covtest import covtest_postprocess, predict_tests, sync_covtest_data
+from covtest.git import git_dirty
 
 logger = logging.getLogger(__name__)
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--covtest-process",
+        action="store_true",
+        default=False,
+        help="Run covtest post-processing after the test session (requires a clean git commit)",
+    )
+
+
 @pytest.fixture(autouse=True)
 def patch_open(request):
+    # When the plugin is loaded, only track file opens when --covtest-process is
+    # requested.  When patch_open is imported directly in a conftest.py the
+    # option is not registered, so getoption raises ValueError — in that case
+    # we treat it as always-active (the user opted in explicitly).
+    try:
+        do_process = request.config.getoption("--covtest-process")
+    except ValueError:
+        do_process = True  # option not registered: direct conftest import, always active
+    if not do_process:
+        yield
+        return
+
     context = request.config.getoption("covtest_context", default=None)
     filename = ".covtest/{}file_open".format(context or "")
     original_open = builtins.open
@@ -54,6 +76,12 @@ def covtest_modifyitems(session, config, items):
 
 def pytest_sessionfinish(session, exitstatus):
     case_folder = str(session.startpath)
+    if not session.config.getoption("--covtest-process", default=False):
+        return
+    if git_dirty(case_folder):
+        print("\ncovtest: --covtest-process requested but the working tree has uncommitted changes"
+              " — snapshot not saved")
+        return
     print("\nProcessing coverage data")
     covtest_postprocess(case_folder)
     print("Processing done")

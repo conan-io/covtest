@@ -84,7 +84,7 @@ def run_pytest(folder, tests=None,  env=None,):
 
     folder = folder.replace("\\", "/")
     args = [tests, "-p covtest.pytest_plugin", "--log-cli-level=DEBUG",
-            "-v", f'--cov={folder}', "--cov-context=test"]
+            "-v", f'--cov={folder}', "--cov-context=test", "--covtest-process"]
     with environment_update(env):
         result = subprocess.run("pytest %s" % " ".join(args), capture_output=True,
                                 cwd=folder, shell=True)

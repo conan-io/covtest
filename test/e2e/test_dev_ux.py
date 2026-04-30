@@ -52,7 +52,7 @@ def test_dev_ux_conf_test_files(method):
         c.save({"conftest.py": conftest})
     git_init_repo(src_folder)
 
-    cmd_args = "-p covtest.pytest_plugin" if method == "plugin" else ""
+    cmd_args = "-p covtest.pytest_plugin --covtest-process" if method == "plugin" else ""
     out, err = c.run_cmd(f"pytest --cov=. --cov-context=test {cmd_args}")
     assert "3 passed" in out
     file_open = c.load(".covtest/file_open")
@@ -172,7 +172,7 @@ def test_dev_ux_full_plugin():
     c = TestClient(src_folder)
     git_init_repo(src_folder)
 
-    out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.pytest_plugin")
+    out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.pytest_plugin --covtest-process")
     assert "2 passed" in out
     assert "Processing coverage data" in out
     assert "Processing done" in out

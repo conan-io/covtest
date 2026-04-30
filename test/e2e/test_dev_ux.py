@@ -90,7 +90,7 @@ def test_dev_ux_split_testing():
 
     # Check parsing the partial with contexts
     c.run(f"process . --covtest-file=mycvfile")
-    content = c.load("mycvfile")
+    content = c.loadgz("mycvfile")
     content = json.loads(content)
     assert content["tests"] == ['windows|mymath_test.py::MyMathTest::test_add']
     c.rm("mycvfile")

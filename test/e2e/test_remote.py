@@ -88,7 +88,7 @@ def test_remote_upload_and_download():
         c.run("predict .")
         assert f"Downloading covtest data from {server_url}/{commit}.covtest" in c.out
         assert "0 commit(s) back" in c.out
-        assert "mymath_test.py::MyMathTest::test_add" == c.load("covtests.tests")
+        assert "mymath_test.py::MyMathTest::test_add" == c.load(".covtest/covtests.tests")
 
         # The file is now cached locally
         assert os.path.isfile(os.path.join(covtest_dir, f"{commit}.covtest"))
@@ -96,7 +96,7 @@ def test_remote_upload_and_download():
         # Second predict: uses local cache, no download
         c.run("predict .")
         assert f"Downloading covtest data from {server_url}" not in c.out
-        assert "mymath_test.py::MyMathTest::test_add" == c.load("covtests.tests")
+        assert "mymath_test.py::MyMathTest::test_add" == c.load(".covtest/covtests.tests")
 
     finally:
         server.shutdown()

@@ -1,8 +1,9 @@
+import gzip
 import json
 import os
 
 from covtest.errors import CovTestException
-from covtest.util.files import save, load
+from covtest.util.files import load
 
 
 class CovTestData:
@@ -114,22 +115,29 @@ class CovTestData:
         dict_tests = {test: i for i, test in enumerate(all_tests)}
         data_files = {path: [dict_tests[t] for t in tests]
                       for path, tests in self.data_files.items()}
-        pyfiles = {f: {lines: [dict_tests[t] for t in tests]
-                       for lines, tests in test_data.items()}
+        # Fix 3: skip lines with no test attribution — they contribute nothing to
+        # predictions and can be numerous (def/import/class lines hit at module load).
+        pyfiles = {f: {line: [dict_tests[t] for t in tests]
+                       for line, tests in test_data.items() if tests}
                    for f, test_data in self.py_files.items()}
         result = {"tests": all_tests,
                   "data_files": data_files,
                   "py_files": pyfiles,
                   "scopes": self.scopes,
                   "last_failed": self.last_failed}
-        save(filepath, json.dumps(result))
+        # Fix 2: gzip-compress the output — typically 10× smaller than plain JSON.
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with gzip.open(filepath, "wt", encoding="utf-8") as fh:
+            json.dump(result, fh)
 
     @staticmethod
     def load(filepath):
         if not os.path.exists(filepath):
             raise CovTestException(f"Covtest file not found: {filepath}")
-        content = load(filepath)
-        data = json.loads(content)
+
+        with gzip.open(filepath, "rt", encoding="utf-8") as fh:
+            data = json.load(fh)
+
         tests_list = data["tests"]
         data_files = {k: set(tests_list[i] for i in v)
                       for k, v in data["data_files"].items()}

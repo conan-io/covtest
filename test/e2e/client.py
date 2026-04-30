@@ -1,3 +1,4 @@
+import gzip
 import io
 import logging
 import os
@@ -36,6 +37,11 @@ class TestClient:
 
     def load(self, filename):
         return load(os.path.join(self.cwd, filename))
+
+    def loadgz(self, filename):
+        with gzip.open(os.path.join(self.cwd, filename), "rt", encoding="utf-8") as fh:
+            data = fh.read()
+        return data
 
     def mv(self, src, dst):
         os.makedirs(os.path.dirname(os.path.join(self.cwd, dst)), exist_ok=True)

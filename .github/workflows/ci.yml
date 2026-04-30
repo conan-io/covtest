@@ -3,8 +3,20 @@ name: CI
 on:
   push:
     branches: ["main"]
+    paths:
+      - "covtest/**"
+      - "test/**"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - ".github/workflows/ci.yml"
   pull_request:
     branches: ["main"]
+    paths:
+      - "covtest/**"
+      - "test/**"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - ".github/workflows/ci.yml"
 
 jobs:
   test:

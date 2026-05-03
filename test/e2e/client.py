@@ -13,6 +13,8 @@ from covtest.util.run import run
 
 
 class TestClient:
+    __test__ = False
+
     def __init__(self, cwd=None):
         self.cwd = cwd or tempfile.mkdtemp()
         self.out = ""
@@ -61,19 +63,23 @@ class TestClient:
         root_logger.handlers = []
         root_logger.addHandler(handler)
 
-        # Capture stdout (print() calls)
+        # Capture stdout and stderr (print() calls, including error messages)
         stdout_buffer = io.StringIO()
+        stderr_buffer = io.StringIO()
 
         cwd = os.getcwd()
         old_stdout = sys.stdout
+        old_stderr = sys.stderr
         try:
             os.chdir(self.cwd)
             sys.stdout = stdout_buffer
+            sys.stderr = stderr_buffer
             result = main(cmd)
         finally:
             sys.stdout = old_stdout
+            sys.stderr = old_stderr
             os.chdir(cwd)
-        self.out = log_buffer.getvalue() + stdout_buffer.getvalue()
+        self.out = log_buffer.getvalue() + stdout_buffer.getvalue() + stderr_buffer.getvalue()
 
         if result == 0 and assert_error:
             raise Exception(f"Failure expected {cwd}\n{self.out}\n")

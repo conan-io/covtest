@@ -1,4 +1,4 @@
-import gzip
+import lzma
 import os
 
 import msgpack
@@ -127,7 +127,7 @@ class CovTestData:
                   "scopes": self.scopes,
                   "last_failed": self.last_failed}
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with gzip.open(filepath, 'wb') as fh:
+        with lzma.open(filepath, 'wb') as fh:
             fh.write(msgpack.packb(result, use_bin_type=True))
 
     @staticmethod
@@ -135,7 +135,7 @@ class CovTestData:
         if not os.path.exists(filepath):
             raise CovTestException(f"Covtest file not found: {filepath}")
 
-        with gzip.open(filepath, 'rb') as fh:
+        with lzma.open(filepath, 'rb') as fh:
             data = msgpack.unpackb(fh.read(), raw=False, strict_map_key=False)
 
         tests_list = data["tests"]
@@ -150,3 +150,54 @@ class CovTestData:
                   for filename, lines in data["scopes"].items()}
         return CovTestData(data_files=data_files, py_files=py_files,
                            last_failed=last_failed, scopes=scopes)
+
+
+_PARTIAL_FILE = "partial.covtest"
+
+
+class PartialData:
+    """Lightweight record written by covtest.predict after each run.
+
+    Contains only what covtest_merge needs to forward the snapshot to the
+    next commit without running the full test suite again:
+
+    - base_commit  — the commit whose full snapshot was used for prediction
+    - tests_run    — test IDs that were selected and executed
+    - last_failed  — subset of tests_run that failed
+    """
+
+    def __init__(self, base_commit, tests_run, last_failed):
+        self.base_commit = base_commit
+        self.tests_run = list(tests_run)
+        self.last_failed = list(last_failed)
+
+    def save(self, folder):
+        filepath = os.path.join(folder, ".covtest", _PARTIAL_FILE)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        data = {
+            "base_commit": self.base_commit,
+            "tests_run": self.tests_run,
+            "last_failed": self.last_failed,
+        }
+        with lzma.open(filepath, "wb") as fh:
+            fh.write(msgpack.packb(data, use_bin_type=True))
+
+    @staticmethod
+    def load(folder):
+        filepath = os.path.join(folder, ".covtest", _PARTIAL_FILE)
+        if not os.path.exists(filepath):
+            raise CovTestException(
+                "no partial covtest data found — run 'pytest -p covtest.predict' first"
+            )
+        with lzma.open(filepath, "rb") as fh:
+            data = msgpack.unpackb(fh.read(), raw=False)
+        return PartialData(data["base_commit"], data["tests_run"], data["last_failed"])
+
+    @staticmethod
+    def exists(folder):
+        return os.path.exists(os.path.join(folder, ".covtest", _PARTIAL_FILE))
+
+    def delete(self, folder):
+        filepath = os.path.join(folder, ".covtest", _PARTIAL_FILE)
+        if os.path.exists(filepath):
+            os.remove(filepath)

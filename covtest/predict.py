@@ -1,7 +1,11 @@
+import json
 import logging
+import os
 
 from covtest.config import read_server_url
-from covtest.covtest import predict_tests, sync_covtest_data
+from covtest.covtest import covtest_file_location, predict_tests, sync_covtest_data
+from covtest.covtest_data import PartialData
+from covtest.git import git_dirty
 from covtest.output import out_info, set_verbose
 
 logger = logging.getLogger(__name__)
@@ -31,10 +35,15 @@ def covtest_modifyitems(session, config, items):
     if server_url and not context:
         sync_covtest_data(str(case_folder), server_url)
     out_info("predicting tests")
-    optimized_tests = predict_tests(case_folder, context, tests=items)
-    if optimized_tests == -1:
+
+    # Locate snapshot; keep base_commit for the partial save below
+    base = covtest_file_location(str(case_folder))
+    if base is None:
         out_info("no covtest data found — running all tests")
         return
+    covtest_file, base_commit = base
+
+    optimized_tests = predict_tests(str(case_folder), covtest_file, base_commit, tests=items)
     if optimized_tests is None:
         out_info("configuration file changed — running all tests")
         return
@@ -43,3 +52,34 @@ def covtest_modifyitems(session, config, items):
     items[:] = selected
     config.hook.pytest_deselected(items=deselected)
     out_info(f"selected {len(items)} test(s)")
+
+    # Stash state for pytest_sessionfinish
+    session._covtest_base_commit = base_commit
+    session._covtest_selected = [t.nodeid for t in selected]
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Save partial snapshot so covtest merge can forward it to the next commit."""
+    base_commit = getattr(session, "_covtest_base_commit", None)
+    if base_commit is None:
+        return  # prediction didn't run (no snapshot found or config-file change)
+
+    case_folder = str(session.startpath)
+
+    # Only save partial during active development (dirty working tree).
+    # A clean tree means we are in a full-process CI run — skip.
+    if not git_dirty(case_folder):
+        return
+
+    selected_tests = getattr(session, "_covtest_selected", [])
+
+    last_failed = []
+    last_failed_file = os.path.join(
+        case_folder, ".pytest_cache", "v", "cache", "lastfailed"
+    )
+    if os.path.exists(last_failed_file):
+        with open(last_failed_file) as fh:
+            last_failed = list(json.load(fh).keys())
+
+    PartialData(base_commit, selected_tests, last_failed).save(case_folder)
+    out_info("partial snapshot saved")

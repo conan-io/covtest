@@ -1,10 +1,10 @@
-import json
 import os
 import textwrap
 
 import pytest
 
 from covtest.covtest_data import CovTestData
+from covtest.git import git_commits
 from test.e2e.client import TestClient
 from test.integration.test_cases_utils import prepare_src_folder, git_init_repo, do_code_changes
 
@@ -189,3 +189,118 @@ def test_dev_ux_full_plugin():
     # Run optimized tests only predicted
     out, err = c.run_cmd("pytest -p covtest.predict")
     assert "1 passed, 1 deselected in" in out  # Only 1 test!
+
+
+def test_merge_basic():
+    """Core incremental workflow: predict run → partial saved → commit → merge → new snapshot."""
+    src = prepare_src_folder("mymath")
+    c = TestClient(src)
+    git_init_repo(src)
+    commit_x = git_commits(src, 1)[0]
+
+    # Full snapshot at commit X (baseline)
+    out, _ = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.process")
+    assert "2 passed" in out
+    assert os.path.isfile(os.path.join(src, ".covtest", commit_x + ".covtest"))
+
+    # Developer makes a change and runs predict (tree is dirty)
+    do_code_changes(src, "mymath/fix_add")
+    out, _ = c.run_cmd("pytest -p covtest.predict")
+    assert "1 passed, 1 deselected" in out
+
+    # Partial snapshot written while tree is dirty
+    partial_file = os.path.join(src, ".covtest", "partial.covtest")
+    assert os.path.isfile(partial_file), "partial.covtest should exist after predict run"
+
+    # Developer commits the change → clean tree, new commit Y
+    c.run_cmd("git add -A")
+    c.run_cmd('git commit -m "fix add"')
+    commit_y = git_commits(src, 1)[0]
+    assert commit_y != commit_x
+
+    # Merge: base snapshot + partial → snapshot for commit Y
+    c.run("merge .")
+    assert "covtest: merging covtest data" in c.out
+    assert "covtest: done" in c.out
+
+    # New snapshot created, partial consumed
+    assert os.path.isfile(os.path.join(src, ".covtest", commit_y + ".covtest"))
+    assert not os.path.isfile(partial_file), "partial.covtest should be deleted after merge"
+
+    # Further changes use the merged snapshot (commit Y) as the base
+    mymath = c.load("mymath.py")
+    mymath = mymath.replace("return a * b", "return a * b  # comment")
+    c.save({"mymath.py": mymath})
+    out, _ = c.run_cmd("pytest -p covtest.predict")
+    # Both functions were changed → both tests should be predicted
+    assert "1 passed, 1 deselected" in out
+
+
+def test_merge_no_code_changes():
+    """Non-code change only (README): no tests run, merge forwards the snapshot cleanly."""
+    src = prepare_src_folder("mymath")
+    c = TestClient(src)
+    commit_x = git_init_repo(src)
+
+    # Full snapshot
+    out, _ = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.process")
+    assert "2 passed" in out
+
+    # Only a documentation file changes — no Python code affected
+    c.save({"README.md": "# MyMath\nA simple math library."})
+
+    # Predict: all tests deselected (no covered lines changed)
+    out, _ = c.run_cmd("pytest -p covtest.predict", assert_error=True)
+    assert "2 deselected" in out
+
+    # Partial still saved (with empty tests_run)
+    assert os.path.isfile(os.path.join(src, ".covtest", "partial.covtest"))
+
+    # Commit
+    c.run_cmd("git add -A")
+    c.run_cmd('git commit -m "add README"')
+    commit_y = git_commits(src, 1)[0]
+
+    # Merge: essentially a snapshot forward — no line remapping needed
+    c.run("merge .")
+    assert "covtest: done" in c.out
+    assert os.path.isfile(os.path.join(src, ".covtest", commit_y + ".covtest"))
+    assert not os.path.isfile(os.path.join(src, ".covtest", "partial.covtest"))
+
+    # Predictions still work correctly off the forwarded snapshot
+    do_code_changes(src, "mymath/fix_add")
+    out, _ = c.run_cmd("pytest -p covtest.predict")
+    assert "1 passed, 1 deselected" in out
+
+
+def test_merge_errors():
+    """covtest merge raises clear errors when preconditions are not met."""
+    src = prepare_src_folder("mymath")
+    c = TestClient(src)
+    git_init_repo(src)
+
+    # Error: no partial file at all
+    c.run("merge .", assert_error=True)
+    assert "no partial" in c.out.lower()
+
+    # Build full snapshot
+    c.run_cmd("pytest --cov=. --cov-context=test -p covtest.process")
+
+    # Produce a partial by running predict with dirty tree
+    do_code_changes(src, "mymath/fix_add")
+    c.run_cmd("pytest -p covtest.predict")
+    assert os.path.isfile(os.path.join(src, ".covtest", "partial.covtest"))
+
+    # Error: tree is still dirty (not committed yet)
+    c.run("merge .", assert_error=True)
+    assert "uncommitted" in c.out.lower()
+
+    # Commit → merge should now succeed
+    c.run_cmd("git add -A")
+    c.run_cmd('git commit -m "fix"')
+    c.run("merge .")
+    assert "covtest: done" in c.out
+
+    # Error: partial already consumed — second merge fails
+    c.run("merge .", assert_error=True)
+    assert "no partial" in c.out.lower()

@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 
 from covtest.config import read_server_url
-from covtest.covtest import covtest_postprocess, predict_tests, covtest_file_location, sync_covtest_data, \
-    COVTEST_FOLDER
+from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, covtest_file_location, \
+    sync_covtest_data, COVTEST_FOLDER
 from covtest.errors import CovTestException
 from covtest.output import out_info, out_verbose, set_verbose
 from covtest.util.files import save
@@ -59,6 +59,23 @@ def _parse_args(argv):
         "--verbose", "-v",
         action="store_true",
         help="Show per-step timing and debug logging",
+    )
+
+    p_merge = sub.add_parser(
+        "merge",
+        parents=[ctx],
+        help="Merge partial covtest data with the base snapshot to create a new snapshot",
+    )
+    p_merge.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Project directory",
+    )
+    p_merge.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show per-step timing",
     )
 
     p_upload = sub.add_parser(
@@ -125,6 +142,16 @@ def main(argv=None):
         except CovTestException as e:
             logger.error(e)
             return -1
+        out_info("done")
+        return 0
+
+    if args.command == "merge":
+        out_info("merging covtest data")
+        try:
+            covtest_merge(str(folder))
+        except CovTestException as e:
+            print(f"covtest error: {e}", file=sys.stderr)
+            return 1
         out_info("done")
         return 0
 

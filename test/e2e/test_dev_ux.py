@@ -4,6 +4,7 @@ import textwrap
 
 import pytest
 
+from covtest.covtest_data import CovTestData
 from test.e2e.client import TestClient
 from test.integration.test_cases_utils import prepare_src_folder, git_init_repo, do_code_changes
 
@@ -90,9 +91,8 @@ def test_dev_ux_split_testing():
 
     # Check parsing the partial with contexts
     c.run(f"process . --covtest-file=mycvfile")
-    content = c.loadgz("mycvfile")
-    content = json.loads(content)
-    assert content["tests"] == ['windows|mymath_test.py::MyMathTest::test_add']
+    content = CovTestData.load(os.path.join(src_folder, "mycvfile"))
+    assert content.py_files["mymath.py"][2] == {'windows|mymath_test.py::MyMathTest::test_add'}
     c.rm("mycvfile")
 
     # So it is not removed by next pytest

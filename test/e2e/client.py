@@ -40,7 +40,7 @@ class TestClient:
         return load(os.path.join(self.cwd, filename))
 
     def loadgz(self, filename):
-        with gzip.open(os.path.join(self.cwd, filename), "rt", encoding="utf-8") as fh:
+        with gzip.open(os.path.join(self.cwd, filename), "rb") as fh:
             data = fh.read()
         return data
 

@@ -1,6 +1,7 @@
 import gzip
-import json
 import os
+
+import msgpack
 
 from covtest.errors import CovTestException
 from covtest.util.files import load
@@ -125,26 +126,27 @@ class CovTestData:
                   "py_files": pyfiles,
                   "scopes": self.scopes,
                   "last_failed": self.last_failed}
-        # Fix 2: gzip-compress the output — typically 10× smaller than plain JSON.
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with gzip.open(filepath, "wt", encoding="utf-8") as fh:
-            json.dump(result, fh)
+        with gzip.open(filepath, 'wb') as fh:
+            fh.write(msgpack.packb(result, use_bin_type=True))
 
     @staticmethod
     def load(filepath):
         if not os.path.exists(filepath):
             raise CovTestException(f"Covtest file not found: {filepath}")
 
-        with gzip.open(filepath, "rt", encoding="utf-8") as fh:
-            data = json.load(fh)
+        with gzip.open(filepath, 'rb') as fh:
+            data = msgpack.unpackb(fh.read(), raw=False, strict_map_key=False)
 
         tests_list = data["tests"]
         data_files = {k: set(tests_list[i] for i in v)
                       for k, v in data["data_files"].items()}
-        py_files = {filename: {int(line): set(tests_list[i] for i in tests)
+        # msgpack preserves integer keys natively — no int() cast needed
+        py_files = {filename: {line: set(tests_list[i] for i in tests)
                                for line, tests in lines.items()}
                     for filename, lines in data["py_files"].items()}
         last_failed = data["last_failed"]
-        scopes = {filename: {int(line): int(max_line) for line, max_line in lines.items()}
+        scopes = {filename: dict(lines)
                   for filename, lines in data["scopes"].items()}
-        return CovTestData(data_files=data_files, py_files=py_files, last_failed=last_failed, scopes=scopes)
+        return CovTestData(data_files=data_files, py_files=py_files,
+                           last_failed=last_failed, scopes=scopes)

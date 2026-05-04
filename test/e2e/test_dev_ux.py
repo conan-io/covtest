@@ -168,11 +168,12 @@ def test_dev_ux_plugin(method):
 
 def test_dev_ux_full_plugin():
     # How a dev can run pytest easily via plugin
+    # Note: -p covtest.process auto-injects --cov=. --cov-context=test
     src_folder = prepare_src_folder("mymath")
     c = TestClient(src_folder)
     git_init_repo(src_folder)
 
-    out, err = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.predict -p covtest.process")
+    out, err = c.run_cmd("pytest -p covtest.predict -p covtest.process")
     assert "2 passed" in out
     assert "covtest: processing coverage data" in out
     assert "covtest: done" in out
@@ -243,7 +244,7 @@ def test_merge_no_code_changes():
     commit_x = git_init_repo(src)
 
     # Full snapshot
-    out, _ = c.run_cmd("pytest --cov=. --cov-context=test -p covtest.process")
+    out, _ = c.run_cmd("pytest -p covtest.process")
     assert "2 passed" in out
 
     # Only a documentation file changes — no Python code affected

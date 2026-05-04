@@ -11,6 +11,26 @@ from covtest.output import out_info, set_verbose
 logger = logging.getLogger(__name__)
 
 
+@pytest.hookimpl(wrapper=True)
+def pytest_load_initial_conftests(early_config, parser, args):
+    """Auto-set --cov=. and --cov-context=test defaults when not supplied.
+
+    pytest-cov reads known_args_namespace.cov_source inside its own
+    pytest_load_initial_conftests(tryfirst=True).  A wrapper impl fires around
+    all non-wrappers regardless of registration order, so we can mutate the
+    namespace before pytest-cov's hook runs (on yield).
+    """
+    try:
+        ns = early_config.known_args_namespace
+        if not ns.cov_source:
+            ns.cov_source = ["."]
+        if not ns.cov_context:
+            ns.cov_context = "test"
+    except AttributeError:
+        pass  # pytest-cov is not installed — nothing to do
+    return (yield)
+
+
 def pytest_addoption(parser):
     try:
         parser.addoption(

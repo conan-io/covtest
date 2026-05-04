@@ -46,6 +46,7 @@ nav:
       - CLI: cli.md
       - Configuration: configuration.md
       - Remote caching: remote-caching.md
+      - License: license.md
 
 extra_css:
   - stylesheets/extra.css

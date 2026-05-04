@@ -206,4 +206,6 @@ pytest test/benchmark
 
 ## License
 
-Proprietary, all rigths reserved
+Free for open source projects, educational institutions, NGOs, public research, and individual developers (including those at commercial companies) running covtest locally.
+
+Commercial CI/CD use by for-profit organizations requires a sponsorship. See the full [LICENSE](LICENSE) and the [License & Sustainability](https://memsharded.github.io/covtest/license/) page for details.

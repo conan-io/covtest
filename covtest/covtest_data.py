@@ -1,10 +1,9 @@
-import lzma
+import gzip
 import os
 
 import msgpack
 
 from covtest.errors import CovTestException
-from covtest.util.files import load
 
 
 class CovTestData:
@@ -127,7 +126,7 @@ class CovTestData:
                   "scopes": self.scopes,
                   "last_failed": self.last_failed}
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with lzma.open(filepath, 'wb') as fh:
+        with gzip.open(filepath, 'wb') as fh:
             fh.write(msgpack.packb(result, use_bin_type=True))
 
     @staticmethod
@@ -135,7 +134,7 @@ class CovTestData:
         if not os.path.exists(filepath):
             raise CovTestException(f"Covtest file not found: {filepath}")
 
-        with lzma.open(filepath, 'rb') as fh:
+        with gzip.open(filepath, 'rb') as fh:
             data = msgpack.unpackb(fh.read(), raw=False, strict_map_key=False)
 
         tests_list = data["tests"]
@@ -179,7 +178,7 @@ class PartialData:
             "tests_run": self.tests_run,
             "last_failed": self.last_failed,
         }
-        with lzma.open(filepath, "wb") as fh:
+        with gzip.open(filepath, "wb") as fh:
             fh.write(msgpack.packb(data, use_bin_type=True))
 
     @staticmethod
@@ -189,7 +188,7 @@ class PartialData:
             raise CovTestException(
                 "no partial covtest data found — run 'pytest -p covtest.predict' first"
             )
-        with lzma.open(filepath, "rb") as fh:
+        with gzip.open(filepath, "rb") as fh:
             data = msgpack.unpackb(fh.read(), raw=False)
         return PartialData(data["base_commit"], data["tests_run"], data["last_failed"])
 

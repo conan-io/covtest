@@ -214,7 +214,7 @@ def covtest_postprocess(folder, covtest_file=None):
     t = time.time()
     # TODO: incremental update of covtestdata
     cov_test_data = CovTestData.create(cov_data, parse_results, last_failed, opened_files)
-    logger.debug(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
+    #logger.debug(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
     out_verbose(f"build mappings   : {time.time() - t:5.1f}s")
 
     base_commit = git_commits(folder, 1)[0]

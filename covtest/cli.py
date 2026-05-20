@@ -5,7 +5,7 @@ import os.path
 import sys
 from pathlib import Path
 
-from covtest.config import read_server_url
+from covtest.config import read_config, read_server_url
 from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, covtest_file_location, \
     sync_covtest_data, COVTEST_FOLDER
 from covtest.errors import CovTestException
@@ -90,6 +90,27 @@ def _parse_args(argv):
         help="Project directory containing .covtest data",
     )
     p_upload.add_argument(
+        "--url", "-U",
+        metavar="URL",
+        help="Server URL (overrides covtest.ini; env: COVTEST_URL)",
+    )
+    p_upload.add_argument(
+        "--user", "-u",
+        metavar="USER",
+        help="Username for HTTP basic auth (env: COVTEST_USER)",
+    )
+    p_upload.add_argument(
+        "--password", "-p",
+        metavar="PASSWORD",
+        help="Password for HTTP basic auth (env: COVTEST_PASSWORD)",
+    )
+    p_upload.add_argument(
+        "--token", "-t",
+        metavar="TOKEN",
+        help="Bearer token for token-based auth, e.g. JFrog Artifactory access token or API key "
+             "(env: COVTEST_TOKEN)",
+    )
+    p_upload.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Show debug logging",
@@ -157,11 +178,17 @@ def main(argv=None):
 
     if args.command == "upload":
         from covtest.remote import upload
-        server_url = read_server_url(str(folder))
+        cfg = read_config(str(folder))
+        # CLI flag > env var (already merged into cfg) > covtest.ini
+        server_url = args.url or cfg.get("server_url")
         if not server_url:
-            print("covtest error: no server_url configured. Add it to pyproject.toml [tool.covtest] "
-                  "or pytest.ini as covtest_server.", file=sys.stderr)
+            print("covtest error: no server_url configured. "
+                  "Pass --url, set COVTEST_URL, or add server_url to covtest.ini.",
+                  file=sys.stderr)
             return 1
+        auth_user = args.user or cfg.get("auth_user")
+        auth_password = args.password or cfg.get("auth_password")
+        auth_token = args.token or cfg.get("auth_token")
         base = covtest_file_location(str(folder))
         if base is None:
             print("covtest error: no local covtest data found. Run 'covtest process' first.",
@@ -169,7 +196,8 @@ def main(argv=None):
             return 1
         covtest_file, commit = base
         try:
-            upload(server_url, commit, covtest_file)
+            upload(server_url, commit, covtest_file,
+                   user=auth_user, password=auth_password, token=auth_token)
         except CovTestException as e:
             logger.error(e)
             return 1

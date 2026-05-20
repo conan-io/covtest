@@ -6,6 +6,15 @@ _DEFAULTS = {
     "server_cache_ttl": 3600,
 }
 
+# Environment variable → config key mapping.
+# Env vars take priority over covtest.ini values.
+_ENV_MAP = {
+    "COVTEST_URL": "server_url",
+    "COVTEST_USER": "auth_user",
+    "COVTEST_PASSWORD": "auth_password",
+    "COVTEST_TOKEN": "auth_token",
+}
+
 
 def _find_covtest_ini(folder):
     """Search for covtest.ini starting from *folder*.
@@ -38,7 +47,16 @@ def _find_covtest_ini(folder):
 
 
 def read_config(folder):
-    """Return the [covtest] section merged with defaults, with typed values."""
+    """Return the [covtest] section merged with defaults and env-var overrides.
+
+    Priority (highest to lowest):
+    1. Environment variables (COVTEST_URL, COVTEST_USER, COVTEST_PASSWORD, COVTEST_TOKEN)
+    2. covtest.ini [covtest] section
+    3. Built-in defaults
+
+    Auth keys available in the returned dict:
+      ``server_url``, ``auth_user``, ``auth_password``, ``auth_token``
+    """
     ini_path = _find_covtest_ini(folder)
     raw = {}
     if ini_path is not None:
@@ -49,6 +67,13 @@ def read_config(folder):
 
     result = dict(_DEFAULTS)
     result.update(raw)
+
+    # Environment variables override ini values
+    for env_var, key in _ENV_MAP.items():
+        val = os.environ.get(env_var)
+        if val:
+            result[key] = val
+
     result["max_commits"] = int(result["max_commits"])
     result["server_cache_ttl"] = int(result["server_cache_ttl"])
     return result

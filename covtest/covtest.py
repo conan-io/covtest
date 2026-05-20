@@ -283,6 +283,9 @@ def sync_covtest_data(folder, server_url):
     cfg = read_config(folder)
     max_commits = cfg["max_commits"]
     cache_ttl = cfg["server_cache_ttl"]
+    auth_user = cfg.get("auth_user")
+    auth_password = cfg.get("auth_password")
+    auth_token = cfg.get("auth_token")
 
     base_commits = git_commits(folder, max_commits)
     base_folder = os.path.join(folder, COVTEST_FOLDER)
@@ -317,7 +320,8 @@ def sync_covtest_data(folder, server_url):
             continue
 
         logger.info(f"Checking server for covtest data: commit {base_commit} ({gap} commit(s) back)")
-        downloaded = download(server_url, base_commit, base_folder)
+        downloaded = download(server_url, base_commit, base_folder,
+                              user=auth_user, password=auth_password, token=auth_token)
         if downloaded is not None:
             logger.info(f"Downloaded covtest data for commit {base_commit} ({gap} commit(s) back)")
             if base_commit in not_found:

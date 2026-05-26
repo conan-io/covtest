@@ -10,6 +10,6 @@ def test_suite_to_run_nearest_not_applied_to_test_files():
     # A minimal coverage map: line 3 has no entry (simulates a newly inserted line)
     py_files = {"mymath_test.py": {2: {"mymath_test.py::test_a"},
                                    5: {"mymath_test.py::test_b"}}}
-    covdata = CovTestData(data_files=None, py_files=py_files, last_failed=[])
+    covdata = CovTestData(data_files=None, py_files=py_files)
     result = suite_to_run(covdata, {"mymath_test.py": [3]}, {}, folder=".")
     assert result == set()

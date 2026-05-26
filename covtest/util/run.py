@@ -10,9 +10,9 @@ def run(cmd, ignore_error=False, cwd=None, env=None):
     if not ignore_error and result.returncode != 0:
         print("\nSTDOUT:\n", stdout)
         print("\nSTDERR:\n", stderr)
-        raise Exception(f"Unexpected error running {cmd}")
+        raise Exception(f"Unexpected error running {cmd}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}")
     if ignore_error and result.returncode == 0:
         print("\nSTDOUT:\n", stdout)
         print("\nSTDERR:\n", stderr)
-        raise Exception(f"Unexpected success running {cmd}")
+        raise Exception(f"Unexpected success running {cmd}\n\nstdout:\n{stdout}\n\nstderr:\n{stderr}")
     return stdout, stderr

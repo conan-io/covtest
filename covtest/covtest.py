@@ -195,12 +195,6 @@ def covtest_postprocess(folder, covtest_file=None):
     parse_results = ParsedData(folder)
     out_verbose(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
 
-    last_failed_file = os.path.join(folder, ".pytest_cache", "v", "cache", "lastfailed")
-    last_failed = None
-    if os.path.exists(last_failed_file):
-        last_failed = json.loads(load(last_failed_file))
-        last_failed = [v for v in last_failed.keys()]
-
     opened_files = os.path.join(folder, ".covtest", "file_open")
     if os.path.exists(opened_files):
         opened_files = load(opened_files).splitlines()
@@ -213,7 +207,7 @@ def covtest_postprocess(folder, covtest_file=None):
     out_verbose("building coverage mappings ...")
     t = time.time()
     # TODO: incremental update of covtestdata
-    cov_test_data = CovTestData.create(cov_data, parse_results, last_failed, opened_files)
+    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files)
     #logger.debug(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
     out_verbose(f"build mappings   : {time.time() - t:5.1f}s")
 
@@ -341,7 +335,7 @@ def sync_covtest_data(folder, server_url):
     return None
 
 
-def predict_tests(folder, covtest_file=None, base_diff="", tests=None):
+def predict_tests(folder, covtest_file=None, base_diff=""):
     """ get the stored coverage data in our DB,
     feeding the modified lines from git diff, will output the
     tests that need to be run
@@ -484,8 +478,7 @@ def covtest_merge(folder):
     2. Compute diff base_commit → HEAD
     3. Remap line numbers in py_files / scopes for every modified file
     4. Drop entries for deleted files
-    5. Apply last_failed from partial
-    6. Save HEAD_commit.covtest and delete partial.covtest
+    5. Save HEAD_commit.covtest and delete partial.covtest
     """
     # --- preconditions -------------------------------------------------------
     if git_dirty(folder):
@@ -553,7 +546,6 @@ def covtest_merge(folder):
     merged = CovTestData(
         data_files=new_data_files,
         py_files=new_py_files,
-        last_failed=partial.last_failed,
         scopes=new_scopes,
     )
 

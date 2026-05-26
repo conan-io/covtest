@@ -274,6 +274,39 @@ def test_merge_no_code_changes():
     assert "1 passed, 1 deselected" in out
 
 
+def test_dev_ux_predict_xdist():
+    """predict plugin works correctly when tests run in parallel with pytest-xdist."""
+    src_folder = prepare_src_folder("mymath")
+    c = TestClient(src_folder)
+    git_init_repo(src_folder)
+
+    out, err = c.run_cmd("pytest --cov=. --cov-context=test")
+    assert "2 passed" in out
+
+    c.run(f"process .")
+    assert "covtest: processing coverage data" in c.out
+    assert "covtest: done" in c.out
+    assert os.path.isdir(os.path.join(src_folder, ".covtest"))
+
+    # Run optimized tests only predicted
+    # Without changes, no tests to run
+    out, err = c.run_cmd(f"pytest -p covtest.predict", assert_error=True)
+    assert "2 deselected" in out
+
+    # With no changes, predict deselects everything — even under xdist
+    out, err = c.run_cmd("pytest -n 2 -p covtest.predict", assert_error=True)
+    assert "no tests ran" in out
+
+    # After a code change only test_add is affected
+    do_code_changes(src_folder, "mymath/fix_add")
+    out, err = c.run_cmd("pytest -n 2 -p covtest.predict")
+    assert "1 passed" in out
+
+    # partial.covtest must be written exactly once (no race between workers)
+    partial = os.path.join(src_folder, ".covtest", "partial.covtest")
+    assert os.path.isfile(partial)
+
+
 def test_merge_errors():
     """covtest merge raises clear errors when preconditions are not met."""
     src = prepare_src_folder("mymath")

@@ -1,6 +1,4 @@
-import json
 import logging
-import os
 
 from covtest.config import read_server_url
 from covtest.covtest import covtest_file_location, predict_tests, sync_covtest_data
@@ -43,7 +41,7 @@ def covtest_modifyitems(session, config, items):
         return
     covtest_file, base_commit = base
 
-    optimized_tests = predict_tests(str(case_folder), covtest_file, base_commit, tests=items)
+    optimized_tests = predict_tests(str(case_folder), covtest_file, base_commit)
     if optimized_tests is None:
         out_info("configuration file changed — running all tests")
         return
@@ -60,6 +58,8 @@ def covtest_modifyitems(session, config, items):
 
 def pytest_sessionfinish(session, exitstatus):
     """Save partial snapshot so covtest merge can forward it to the next commit."""
+    # Only the controller (or a plain non-distributed session) writes the
+    # partial; workers must not write it or they race each other on disk.
     base_commit = getattr(session, "_covtest_base_commit", None)
     if base_commit is None:
         return  # prediction didn't run (no snapshot found or config-file change)
@@ -73,13 +73,5 @@ def pytest_sessionfinish(session, exitstatus):
 
     selected_tests = getattr(session, "_covtest_selected", [])
 
-    last_failed = []
-    last_failed_file = os.path.join(
-        case_folder, ".pytest_cache", "v", "cache", "lastfailed"
-    )
-    if os.path.exists(last_failed_file):
-        with open(last_failed_file) as fh:
-            last_failed = list(json.load(fh).keys())
-
-    PartialData(base_commit, selected_tests, last_failed).save(case_folder)
+    PartialData(base_commit, selected_tests).save(case_folder)
     out_info("partial snapshot saved")

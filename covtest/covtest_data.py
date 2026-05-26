@@ -8,19 +8,17 @@ from covtest.errors import CovTestException
 
 class CovTestData:
 
-    def __init__(self, data_files=None, py_files=None, last_failed=None, scopes=None):
+    def __init__(self, data_files=None, py_files=None, scopes=None):
         # the relation between the files in the project that have been opened
         # and the tests that cover/use them
         self.data_files = data_files or {}  # filepath: set(tests)
         self.py_files = py_files or {}
-        self.last_failed = last_failed or []
         self.scopes = scopes or {}
 
     @staticmethod
-    def create(coverage_data, parse_data, last_failed, opened_files):
+    def create(coverage_data, parse_data, opened_files):
         result = CovTestData()
         result.py_files = coverage_data
-        result.last_failed = last_failed
         result._extend_mappings(parse_data)
         result.scopes = {f: {line: lines for line, lines in scope_data.scopes.items()}
                          for f, scope_data in parse_data.files.items()}
@@ -123,8 +121,7 @@ class CovTestData:
         result = {"tests": all_tests,
                   "data_files": data_files,
                   "py_files": pyfiles,
-                  "scopes": self.scopes,
-                  "last_failed": self.last_failed}
+                  "scopes": self.scopes}
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with gzip.open(filepath, 'wb') as fh:
             fh.write(msgpack.packb(result, use_bin_type=True))
@@ -144,11 +141,9 @@ class CovTestData:
         py_files = {filename: {line: set(tests_list[i] for i in tests)
                                for line, tests in lines.items()}
                     for filename, lines in data["py_files"].items()}
-        last_failed = data["last_failed"]
         scopes = {filename: dict(lines)
                   for filename, lines in data["scopes"].items()}
-        return CovTestData(data_files=data_files, py_files=py_files,
-                           last_failed=last_failed, scopes=scopes)
+        return CovTestData(data_files=data_files, py_files=py_files, scopes=scopes)
 
 
 _PARTIAL_FILE = "partial.covtest"
@@ -162,13 +157,11 @@ class PartialData:
 
     - base_commit  — the commit whose full snapshot was used for prediction
     - tests_run    — test IDs that were selected and executed
-    - last_failed  — subset of tests_run that failed
     """
 
-    def __init__(self, base_commit, tests_run, last_failed):
+    def __init__(self, base_commit, tests_run):
         self.base_commit = base_commit
         self.tests_run = list(tests_run)
-        self.last_failed = list(last_failed)
 
     def save(self, folder):
         filepath = os.path.join(folder, ".covtest", _PARTIAL_FILE)
@@ -176,7 +169,6 @@ class PartialData:
         data = {
             "base_commit": self.base_commit,
             "tests_run": self.tests_run,
-            "last_failed": self.last_failed,
         }
         with gzip.open(filepath, "wb") as fh:
             fh.write(msgpack.packb(data, use_bin_type=True))
@@ -190,7 +182,7 @@ class PartialData:
             )
         with gzip.open(filepath, "rb") as fh:
             data = msgpack.unpackb(fh.read(), raw=False)
-        return PartialData(data["base_commit"], data["tests_run"], data["last_failed"])
+        return PartialData(data["base_commit"], data["tests_run"])
 
     @staticmethod
     def exists(folder):

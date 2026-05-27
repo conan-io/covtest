@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 def git_commits(folder, n=1):
     try:
         with chdir(folder):
-            stdout, _ = run(f'git rev-list HEAD -n {n} --full-history -- "."')
+            stdout, _ = run(f'git rev-list HEAD -n {n}')
             return stdout.splitlines()
     except Exception as e:
         raise Exception("Unable to get git commit in '%s': %s" % (folder, str(e)))

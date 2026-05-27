@@ -23,12 +23,12 @@ def _auth_headers(user=None, password=None, token=None):
     return {}
 
 
-def upload(server_url, commit, covtest_file, user=None, password=None, token=None):
+def upload(server_url, covtest_file, user=None, password=None, token=None):
     """Upload a .covtest file to the remote server via HTTP PUT.
 
     Authentication priority: token > basic (user+password) > none.
     """
-    url = "{}/{}.covtest".format(server_url.rstrip("/"), commit)
+    url = "{}/{}".format(server_url.rstrip("/"), os.path.basename(covtest_file))
     logger.info("Uploading covtest data to %s", url)
     with open(covtest_file, "rb") as f:
         data = f.read()

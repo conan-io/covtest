@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 from covtest.config import read_config, read_server_url, config_list_info
-from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, covtest_file_location, \
-    sync_covtest_data, COVTEST_FOLDER
+from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, COVTEST_FOLDER
 from covtest.errors import CovTestException
+from covtest.git import git_commits
 from covtest.output import out_info, out_verbose, set_verbose
 from covtest.util.files import save
 
@@ -223,14 +223,12 @@ def main(argv=None):
         auth_user = args.user or cfg.get("auth_user")
         auth_password = args.password or cfg.get("auth_password")
         auth_token = args.token or cfg.get("auth_token")
-        base = covtest_file_location(str(folder))
-        if base is None:
-            print("covtest error: no local covtest data found. Run 'covtest process' first.",
-                  file=sys.stderr)
-            return 1
-        covtest_file, commit = base
+        commit = git_commits(folder)[-1]  # just the last, current commit
+        covtest_file = os.path.join(folder, COVTEST_FOLDER, commit + ".covtest")
+        if not os.path.exists(covtest_file):
+            raise CovTestException(f"The covtest file to upload does not exist: {covtest_file}")
         try:
-            upload(server_url, commit, covtest_file,
+            upload(server_url, covtest_file,
                    user=auth_user, password=auth_password, token=auth_token)
         except CovTestException as e:
             logger.error(e)
@@ -239,10 +237,6 @@ def main(argv=None):
 
     if args.command == "predict":
         out_info("predicting tests")
-        if not args.covtest_file:
-            server_url = read_server_url(str(folder))
-            if server_url:
-                sync_covtest_data(str(folder), server_url)
         tests = predict_tests(str(folder), args.covtest_file)
         if tests == -1:
             print("covtest error: no covtest data found — run 'covtest process' first.",
@@ -267,27 +261,18 @@ def main(argv=None):
         return 0
 
     if args.command == "diff":
+        from covtest.covtest import get_base_commit
         from covtest.util.run import run
         from covtest.util.files import chdir
 
         cfg = read_config(str(folder))
-        server_url = cfg.get("server_url")
+        covtest_folder = os.path.join(str(folder), COVTEST_FOLDER)
+        base_commit = get_base_commit(str(folder), covtest_folder, cfg)
 
-        # Snapshot lookup — with per-commit progress reporting
-        if server_url:
-            out_info(f"checking server: {server_url}")
-            snapshot = sync_covtest_data(str(folder), server_url, reporter=print)
-        else:
-            out_info("no server configured — checking local snapshots ...")
-            snapshot = covtest_file_location(str(folder), reporter=print)
-
-        if snapshot is None:
+        if base_commit is None:
             print("covtest error: no covtest data found — run 'covtest process' first.",
                   file=sys.stderr)
             return -1
-
-        covtest_file, base_commit = snapshot
-        out_info(f"snapshot: {covtest_file}")
 
         # Diff summary
         out_info(f"git diff: HEAD vs {base_commit[:8]}")

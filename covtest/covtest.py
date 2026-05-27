@@ -8,12 +8,13 @@ import time
 import coverage
 from unidiff import PatchSet
 
+from covtest.config import read_config
 from covtest.covtest_data import CovTestData, PartialData
 from covtest.ast_parser import ParsedData
 from covtest.diff import diff
 from covtest.errors import CovTestException
 from covtest.git import git_commits, git_diff, git_dirty
-from covtest.output import out_verbose
+from covtest.output import out_verbose, out_info
 from covtest.util.files import load, chdir
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ def extract_coverage(folder):
     """ Parse the .coverage DB to get the info we want
     which is a dict {file: {line: [pytest cov context]}}
     """
-    logger.info(f"Extracting coverage data from coverage DB: {folder}")
+    out_info(f"Extracting coverage data from coverage DB: {folder}")
     file = os.path.join(folder, ".coverage")
     if not os.path.isfile(file):
         raise CovTestException(f"Coverage file {file} not found")
@@ -103,11 +104,11 @@ def suite_to_run(covdata, modified, inserted, folder):
                 continue
         m = py_files.get(filename)
         if m is None:
-            logger.debug("FILE %s does not contain test data" % filename)
+            out_verbose("FILE %s does not contain test data" % filename)
             continue
         for line in modified_lines:
             tests = m.get(line, ())
-            logger.debug(f"      {filename}:{line} => {tests}")
+            out_verbose(f"      {filename}:{line} => {tests}")
             for t in tests:
                 if t:
                     result.add(t)
@@ -127,7 +128,7 @@ def suite_to_run(covdata, modified, inserted, folder):
     for filename, inserted_lines in inserted.items():
         m = py_files.get(filename)
         if m is None:
-            logger.debug("FILE %s does not contain test data" % filename)
+            out_verbose("FILE %s does not contain test data" % filename)
             continue
 
         scope = scopes.get(filename)
@@ -187,7 +188,7 @@ def covtest_postprocess(folder, covtest_file=None):
     out_verbose("extracting coverage data ...")
     t = time.time()
     cov_data = extract_coverage(folder)
-    logger.debug(f"Coverage results:\n{str_nested_dict(cov_data)}")
+    out_verbose(f"Coverage results:\n{str_nested_dict(cov_data)}")
     out_verbose(f"extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
 
     out_verbose("parsing source files ...")
@@ -208,12 +209,12 @@ def covtest_postprocess(folder, covtest_file=None):
     t = time.time()
     # TODO: incremental update of covtestdata
     cov_test_data = CovTestData.create(cov_data, parse_results, opened_files)
-    #logger.debug(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
+    #out_verbose(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
     out_verbose(f"build mappings   : {time.time() - t:5.1f}s")
 
     base_commit = git_commits(folder, 1)[0]
     if git_dirty(folder):  # In case it is dirty
-        logger.debug(f"Covtest not storing data because repo is dirty: {folder}")
+        out_verbose(f"Covtest not storing data because repo is dirty: {folder}")
         out_verbose(f"total            : {time.time() - t0:5.1f}s  (dirty repo, snapshot not saved)")
         return
 
@@ -247,116 +248,55 @@ def _save_not_found_cache(base_folder, cache):
         json.dump(cache, f)
 
 
-def covtest_file_location(folder, reporter=None):
-    from covtest.config import read_config
-    max_commits = read_config(folder)["max_commits"]
-    base_commits = git_commits(folder, max_commits)
-    base_folder = os.path.join(folder, COVTEST_FOLDER)
-    for gap, base_commit in enumerate(base_commits):
-        covtest_file = os.path.join(base_folder, base_commit + ".covtest")
-        if os.path.exists(covtest_file):
-            if reporter:
-                s = "s" if gap != 1 else ""
-                reporter(f"  {base_commit[:8]} ({gap} commit{s} back): found locally")
-            logger.debug(f"Covtest using file: {covtest_file}")
-            return covtest_file, base_commit
-        if reporter:
-            s = "s" if gap != 1 else ""
-            reporter(f"  {base_commit[:8]} ({gap} commit{s} back): not found locally")
-    logger.debug("Covtest couldn't find data for previous commits")
-
-
-def sync_covtest_data(folder, server_url, reporter=None):
-    """Download covtest data for the nearest base commit from server_url into
-    the local .covtest folder, skipping commits that are already present.
-
-    Commits not found on the server are recorded in a negative cache inside
-    .covtest/ so repeated invocations skip them immediately.  Each cache entry
-    expires after server_cache_ttl seconds (from covtest.ini, default 3600),
-    after which the server is queried again.
-
-    Returns (local_path, commit) on success, None if nothing was found.
+def get_base_commit(project_folder, covtest_folder, cfg):
+    """ obtain the base commit to diff against, checking in the local cache
+    and retrieving from server if necessary
     """
-    from covtest.config import read_config
-    from covtest.remote import download
-
-    cfg = read_config(folder)
     max_commits = cfg["max_commits"]
     cache_ttl = cfg["server_cache_ttl"]
-    auth_user = cfg.get("auth_user")
-    auth_password = cfg.get("auth_password")
-    auth_token = cfg.get("auth_token")
+    server_url = cfg.get("server_url")
 
-    base_commits = git_commits(folder, max_commits)
-    base_folder = os.path.join(folder, COVTEST_FOLDER)
+    commits = git_commits(project_folder, max_commits)
 
-    not_found = _load_not_found_cache(base_folder)
+    not_found = _load_not_found_cache(covtest_folder) if server_url else {}
     now = time.time()
-    cache_modified = False
 
-    # Prune entries for commits no longer in recent history
-    active = set(base_commits)
-    stale = [c for c in not_found if c not in active]
-    if stale:
-        for c in stale:
-            del not_found[c]
-        cache_modified = True
+    result = None
+    for gap, commit in enumerate(commits):
+        local_file = os.path.join(covtest_folder, commit + ".covtest")
 
-    for gap, base_commit in enumerate(base_commits):
-        s = "s" if gap != 1 else ""
-        local_file = os.path.join(base_folder, base_commit + ".covtest")
         if os.path.exists(local_file):
-            if reporter:
-                reporter(f"  {base_commit[:8]} ({gap} commit{s} back): found locally")
-            if gap:
-                logger.info(f"Covtest data found locally for commit {base_commit} ({gap} commit(s) back)")
-            else:
-                logger.debug(f"Covtest data already present locally for {base_commit}")
-            if cache_modified:
-                _save_not_found_cache(base_folder, not_found)
-            return local_file, base_commit
+            out_info(f"Covtest data found locally for commit {commit} ({gap} commit(s) back)")
+            result = commit
+            break
 
-        cached_at = not_found.get(base_commit)
-        if cached_at is not None and (now - cached_at) < cache_ttl:
-            remaining = int(cache_ttl - (now - cached_at))
-            if reporter:
-                reporter(f"  {base_commit[:8]} ({gap} commit{s} back): not found on server"
-                         f" (cached, {remaining}s until retry)")
-            logger.debug(f"Skipping server check for {base_commit} (cached not-found, "
-                         f"expires in {remaining}s)")
+        if not server_url:
             continue
 
-        if reporter:
-            reporter(f"  {base_commit[:8]} ({gap} commit{s} back): querying server ...")
-        logger.info(f"Checking server for covtest data: commit {base_commit} ({gap} commit(s) back)")
-        downloaded = download(server_url, base_commit, base_folder,
-                              user=auth_user, password=auth_password, token=auth_token)
+        cached_at = not_found.get(commit)
+        if cached_at is not None and (now - cached_at) < cache_ttl:
+            out_verbose(f"Skipping server check for {commit} (cached not-found, "
+                        f"expires in {int(cache_ttl - (now - cached_at))}s)")
+            continue
+
+        out_info(f"Checking server for covtest data: commit {commit} ({gap} commit(s) back)")
+        from covtest.remote import download
+        downloaded = download(server_url, commit, covtest_folder, user=cfg.get("auth_user"),
+                              password=cfg.get("auth_password"), token=cfg.get("auth_token"))
         if downloaded is not None:
-            if reporter:
-                reporter(f"  {base_commit[:8]} ({gap} commit{s} back): downloaded")
-            logger.info(f"Downloaded covtest data for commit {base_commit} ({gap} commit(s) back)")
-            if base_commit in not_found:
-                del not_found[base_commit]
-                cache_modified = True
-            if cache_modified:
-                _save_not_found_cache(base_folder, not_found)
-            return downloaded, base_commit
+            out_info(f"Downloaded covtest data for commit {commit} ({gap} commit(s) back)")
+            result = commit
+            break
 
-        if reporter:
-            reporter(f"  {base_commit[:8]} ({gap} commit{s} back): not found on server")
-        not_found[base_commit] = now
-        cache_modified = True
+        not_found[commit] = now
 
-    if cache_modified:
-        _save_not_found_cache(base_folder, not_found)
-
-    if reporter:
-        reporter(f"  no covtest data found (checked {len(base_commits)} commit(s))")
-    logger.info(f"Covtest data not found on server for the last {len(base_commits)} commit(s)")
-    return None
+    # prune the not_found cache to 100
+    not_found = dict(list(not_found.items())[-100:])
+    _save_not_found_cache(covtest_folder, not_found)
+    return result
 
 
-def predict_tests(folder, covtest_file=None, base_diff=""):
+def predict_tests(folder, covtest_file=None, base_commit=""):
     """ get the stored coverage data in our DB,
     feeding the modified lines from git diff, will output the
     tests that need to be run
@@ -364,13 +304,15 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     t0 = time.time()
 
     if covtest_file is None:
-        assert base_diff == ""
+        assert base_commit == ""
         # Looking for the covtest data file in the default locations
         # At the moment only local .covtest folder
-        base = covtest_file_location(folder)
-        if base is None:
+        cfg = read_config(str(folder))
+        covtest_folder = os.path.join(str(folder), COVTEST_FOLDER)
+        base_commit = get_base_commit(str(folder), covtest_folder, cfg)
+        if base_commit is None:
             return -1
-        covtest_file, base_diff = base
+        covtest_file = os.path.join(str(folder), COVTEST_FOLDER, base_commit + ".covtest")
 
     out_verbose("loading snapshot ...")
     t = time.time()
@@ -379,10 +321,10 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
 
     out_verbose("computing git diff ...")
     t = time.time()
-    text_diff = git_diff(folder, base_diff)
-    logger.debug(f"git diff\n{text_diff}")
+    text_diff = git_diff(folder, base_commit)
+    out_verbose(f"git diff\n{text_diff}")
     modified_lines, inserted_lines = diff(text_diff)
-    logger.debug(f"Modified lines\n{modified_lines}")
+    out_verbose(f"Modified lines\n{modified_lines}")
     # Make it absolute paths to match with the DB
     # TODO: Normalize paths
     modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
@@ -393,7 +335,7 @@ def predict_tests(folder, covtest_file=None, base_diff=""):
     config_files = [f for f in {**modified_lines, **inserted_lines}
                     if _is_config_file(f)]
     if config_files:
-        logger.info(f"Pytest or project configuration files modified {config_files} — all tests must run")
+        out_info(f"Pytest or project configuration files modified {config_files} — all tests must run")
         return None
 
     out_verbose("selecting tests ...")

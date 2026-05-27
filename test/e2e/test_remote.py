@@ -159,48 +159,6 @@ def test_remote_upload_and_download():
         shutil.rmtree(server_root)
 
 
-def test_negative_cache():
-    """Commits absent from the server are not re-queried within the TTL."""
-    src_folder = prepare_src_folder("mymath")
-    c = TestClient(src_folder)
-    git_init_repo(src_folder)
-
-    # Server exists but has no data
-    server_root = tempfile.mkdtemp()
-    server = _start_file_server(server_root)
-    server_url = f"http://127.0.0.1:{server.server_address[1]}"
-
-    # Short TTL so the test stays fast; large enough we won't expire during the test
-    c.save({"covtest.ini": f"[covtest]\nserver_url = {server_url}\nserver_cache_ttl = 60\n"})
-
-    try:
-        out, err = c.run_cmd("pytest --cov=. --cov-context=test")
-        assert "2 passed" in out
-        c.run("process")
-
-        covtest_dir = os.path.join(src_folder, ".covtest")
-        shutil.rmtree(covtest_dir, ignore_errors=True)
-
-        do_code_changes(src_folder, "mymath/fix_add")
-
-        # First predict: queries server, finds nothing, writes negative cache
-        c.run("predict .", assert_error=True)  # returns -1, no data
-        assert "Checking server for covtest data" in c.out
-        not_found_cache = os.path.join(src_folder, ".covtest", "server_not_found.json")
-        not_found = c.load(".covtest/server_not_found.json")
-        print(not_found)
-        assert os.path.isfile(not_found_cache)
-
-        # Second predict: skips server entirely (negative cache still valid)
-        c.run("predict .", assert_error=True)
-        assert "Checking server for covtest data" not in c.out
-        assert "cached not-found" in c.out
-
-    finally:
-        server.shutdown()
-        shutil.rmtree(server_root)
-
-
 def test_remote_auth_token_cli():
     """Upload via --token CLI arg; download via COVTEST_TOKEN env var."""
     src_folder = prepare_src_folder("mymath")

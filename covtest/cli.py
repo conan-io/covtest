@@ -5,7 +5,7 @@ import os.path
 import sys
 from pathlib import Path
 
-from covtest.config import read_config, read_server_url
+from covtest.config import read_config, read_server_url, config_list_info
 from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, covtest_file_location, \
     sync_covtest_data, COVTEST_FOLDER
 from covtest.errors import CovTestException
@@ -114,6 +114,40 @@ def _parse_args(argv):
         "--verbose", "-v",
         action="store_true",
         help="Show debug logging",
+    )
+
+    p_diff = sub.add_parser(
+        "diff",
+        parents=[ctx],
+        help="Show what covtest would predict: snapshot source, diff summary, and selected tests",
+    )
+    p_diff.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Project directory (defaults to current directory)",
+    )
+    p_diff.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Show extra debug output",
+    )
+
+    p_config = sub.add_parser(
+        "config",
+        parents=[ctx],
+        help="Inspect covtest configuration",
+    )
+    config_sub = p_config.add_subparsers(dest="config_command", required=True)
+    p_config_list = config_sub.add_parser(
+        "list",
+        help="Show effective configuration values and the files/env vars they come from",
+    )
+    p_config_list.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Project directory (defaults to current directory)",
     )
 
     return parser.parse_args(argv)
@@ -231,6 +265,83 @@ def main(argv=None):
             out_verbose(f"saved {len(tests)} tests -> {filename}")
         out_info("done")
         return 0
+
+    if args.command == "diff":
+        from covtest.util.run import run
+        from covtest.util.files import chdir
+
+        cfg = read_config(str(folder))
+        server_url = cfg.get("server_url")
+
+        # Snapshot lookup — with per-commit progress reporting
+        if server_url:
+            out_info(f"checking server: {server_url}")
+            snapshot = sync_covtest_data(str(folder), server_url, reporter=print)
+        else:
+            out_info("no server configured — checking local snapshots ...")
+            snapshot = covtest_file_location(str(folder), reporter=print)
+
+        if snapshot is None:
+            print("covtest error: no covtest data found — run 'covtest process' first.",
+                  file=sys.stderr)
+            return -1
+
+        covtest_file, base_commit = snapshot
+        out_info(f"snapshot: {covtest_file}")
+
+        # Diff summary
+        out_info(f"git diff: HEAD vs {base_commit[:8]}")
+        with chdir(str(folder)):
+            stat_out, _ = run(f"git diff --stat {base_commit}")
+        if stat_out.strip():
+            for line in stat_out.strip().splitlines():
+                print(f"  {line}")
+        else:
+            print("  (no changes since snapshot)")
+
+        return 0
+
+    if args.command == "config":
+        if args.config_command == "list":
+            info = config_list_info(str(folder))
+            _SENSITIVE_KEYS = {"auth_password", "auth_token"}
+            _SENSITIVE_ENVS = {"COVTEST_PASSWORD", "COVTEST_TOKEN"}
+            _ALL_KEYS = [
+                "max_commits", "server_cache_ttl",
+                "server_url", "auth_user", "auth_password", "auth_token",
+            ]
+
+            # Config file
+            if info["config_file"]:
+                print(f"Config file: {info['config_file']}")
+            else:
+                print("Config file: (none found)")
+                print("  Searched:")
+                for c in info["candidates"]:
+                    print(f"    {c}")
+                print("  (and parent directories up to filesystem root)")
+
+            # Environment variables
+            print("\nEnvironment variables:")
+            for env_var, val in info["env"].items():
+                if val:
+                    display = "***" if env_var in _SENSITIVE_ENVS else val
+                    print(f"  {env_var:<20} = {display}")
+                else:
+                    print(f"  {env_var:<20} = (not set)")
+
+            # Effective values
+            print("\nEffective configuration:")
+            cfg = info["effective"]
+            for key in _ALL_KEYS:
+                val = cfg.get(key)
+                if val is None:
+                    print(f"  {key:<20} = (not set)")
+                else:
+                    display = "***" if key in _SENSITIVE_KEYS else val
+                    print(f"  {key:<20} = {display}")
+
+            return 0
 
     raise AssertionError(f"unknown command: {args.command}")
 

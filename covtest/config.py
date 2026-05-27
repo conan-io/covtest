@@ -81,3 +81,22 @@ def read_config(folder):
 
 def read_server_url(folder):
     return read_config(folder).get("server_url")
+
+
+def config_list_info(folder):
+    """Return structured info about config sources and effective values for display."""
+    folder_real = os.path.realpath(folder)
+    ini_path = _find_covtest_ini(folder_real)
+    candidates = [
+        os.path.join(folder_real, "covtest.ini"),
+        os.path.join(folder_real, "test", "covtest.ini"),
+        os.path.join(folder_real, "tests", "covtest.ini"),
+    ]
+    env_entries = {env_var: os.environ.get(env_var) for env_var in _ENV_MAP}
+    effective = read_config(folder_real)
+    return {
+        "config_file": ini_path,
+        "candidates": candidates,
+        "env": env_entries,
+        "effective": effective,
+    }

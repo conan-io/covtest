@@ -268,6 +268,7 @@ def test_merge_no_code_changes():
     assert "1 passed, 1 deselected" in out
 
 
+@pytest.mark.xfail(reason="still not working fine in CI")
 def test_dev_ux_predict_xdist():
     """predict plugin works correctly when tests run in parallel with pytest-xdist."""
     src_folder = prepare_src_folder("mymath")

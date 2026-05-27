@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from covtest.covtest import COVTEST_FOLDER
+
 CONAN_TAG = "2.27.0"
 CONAN_REPO_URL = "https://github.com/conan-io/conan"
 COVTEST_ROOT = Path(__file__).parent.parent.parent  # covtest project root
@@ -159,14 +161,14 @@ def _get_broken_tests(repo_dir, venv_python):
         report = json.load(f)
     failed = {t["nodeid"] for t in report.get("tests", [])
               if t["outcome"] in ("failed", "error")}
-    print("FAILED TESTS:", failed)
+    print("FAILED TESTS:", len(failed), failed)
     return failed
 
 
 def _get_predicted_tests(repo_dir, venv_python):
     """Run covtest predict and return the set of predicted test node IDs."""
     # Remove stale output file if present
-    tests_file = os.path.join(repo_dir, "covtests.tests")
+    tests_file = os.path.join(repo_dir, COVTEST_FOLDER, "covtests.tests")
     if os.path.exists(tests_file):
         os.remove(tests_file)
 

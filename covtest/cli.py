@@ -236,8 +236,17 @@ def main(argv=None):
         return 0
 
     if args.command == "predict":
+        from covtest.covtest import get_base_commit
         out_info("predicting tests")
-        tests = predict_tests(str(folder), args.covtest_file)
+
+        project_folder = folder
+        cfg = read_config(project_folder)
+        base_commit = get_base_commit(project_folder, cfg)
+        if base_commit is None:
+            out_info("no covtest data found — running all tests")
+            return -1
+
+        tests = predict_tests(folder, base_commit)
         if tests == -1:
             print("covtest error: no covtest data found — run 'covtest process' first.",
                   file=sys.stderr)
@@ -265,9 +274,9 @@ def main(argv=None):
         from covtest.util.run import run
         from covtest.util.files import chdir
 
-        cfg = read_config(str(folder))
-        covtest_folder = os.path.join(str(folder), COVTEST_FOLDER)
-        base_commit = get_base_commit(str(folder), covtest_folder, cfg)
+        project_folder = folder
+        cfg = read_config(project_folder)
+        base_commit = get_base_commit(project_folder, cfg)
 
         if base_commit is None:
             print("covtest error: no covtest data found — run 'covtest process' first.",

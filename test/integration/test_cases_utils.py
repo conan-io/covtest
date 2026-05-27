@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import textwrap
 import time
+from pathlib import Path
 
 from covtest.util.files import chdir, save, load
 from covtest.util.run import run
@@ -21,7 +22,7 @@ def prepare_src_folder(folder):
     temp = tempfile.mkdtemp()
     cases_folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "cases", folder))
     src = os.path.join(cases_folder, "src")
-    dst = os.path.join(temp, "dst")
+    dst = Path(temp) / "dst"
     shutil.copytree(src, dst)
     # Do not diff our file
     gitignore = textwrap.dedent("""\
@@ -43,6 +44,7 @@ def git_init_repo(folder):
         run("git add .")
         run("git commit -m initial")
         commit, _ = run('git rev-list HEAD -n 1')
+        commit = commit.strip()
     logger.debug(f"TIME: init_repo {time.time() - t}")
     return commit
 
@@ -82,8 +84,8 @@ def run_pytest(folder, tests=None,  env=None,):
     t = time.time()
     logger.debug("++++++ Launching pytest %s", tests)
 
-    folder = folder.replace("\\", "/")
-    args = [tests, "-p covtest.process", "--log-cli-level=DEBUG",
+    folder = str(folder).replace("\\", "/")
+    args = [str(tests), "-p covtest.process", "--log-cli-level=DEBUG",
             "-v", f'--cov={folder}', "--cov-context=test",]
     with environment_update(env):
         result = subprocess.run("pytest %s" % " ".join(args), capture_output=True,

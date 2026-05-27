@@ -8,7 +8,6 @@ import time
 import coverage
 from unidiff import PatchSet
 
-from covtest.config import read_config
 from covtest.covtest_data import CovTestData, PartialData
 from covtest.ast_parser import ParsedData
 from covtest.diff import diff
@@ -248,7 +247,7 @@ def _save_not_found_cache(base_folder, cache):
         json.dump(cache, f)
 
 
-def get_base_commit(project_folder, covtest_folder, cfg):
+def get_base_commit(project_folder, cfg):
     """ obtain the base commit to diff against, checking in the local cache
     and retrieving from server if necessary
     """
@@ -258,12 +257,13 @@ def get_base_commit(project_folder, covtest_folder, cfg):
 
     commits = git_commits(project_folder, max_commits)
 
+    covtest_folder = project_folder / COVTEST_FOLDER
     not_found = _load_not_found_cache(covtest_folder) if server_url else {}
     now = time.time()
 
     result = None
     for gap, commit in enumerate(commits):
-        local_file = os.path.join(covtest_folder, commit + ".covtest")
+        local_file = covtest_folder / (commit + ".covtest")
 
         if os.path.exists(local_file):
             out_info(f"Covtest data found locally for commit {commit} ({gap} commit(s) back)")
@@ -296,24 +296,15 @@ def get_base_commit(project_folder, covtest_folder, cfg):
     return result
 
 
-def predict_tests(folder, covtest_file=None, base_commit=""):
+def predict_tests(project_folder, base_commit):
     """ get the stored coverage data in our DB,
     feeding the modified lines from git diff, will output the
     tests that need to be run
     """
     t0 = time.time()
+    assert base_commit
 
-    if covtest_file is None:
-        assert base_commit == ""
-        # Looking for the covtest data file in the default locations
-        # At the moment only local .covtest folder
-        cfg = read_config(str(folder))
-        covtest_folder = os.path.join(str(folder), COVTEST_FOLDER)
-        base_commit = get_base_commit(str(folder), covtest_folder, cfg)
-        if base_commit is None:
-            return -1
-        covtest_file = os.path.join(str(folder), COVTEST_FOLDER, base_commit + ".covtest")
-
+    covtest_file = project_folder / COVTEST_FOLDER / (base_commit + ".covtest")
     out_verbose("loading snapshot ...")
     t = time.time()
     covdata = CovTestData.load(covtest_file)
@@ -321,7 +312,7 @@ def predict_tests(folder, covtest_file=None, base_commit=""):
 
     out_verbose("computing git diff ...")
     t = time.time()
-    text_diff = git_diff(folder, base_commit)
+    text_diff = git_diff(project_folder, base_commit)
     out_verbose(f"git diff\n{text_diff}")
     modified_lines, inserted_lines = diff(text_diff)
     out_verbose(f"Modified lines\n{modified_lines}")
@@ -340,7 +331,7 @@ def predict_tests(folder, covtest_file=None, base_commit=""):
 
     out_verbose("selecting tests ...")
     t = time.time()
-    tests = suite_to_run(covdata, modified_lines, inserted_lines, folder)
+    tests = suite_to_run(covdata, modified_lines, inserted_lines, project_folder)
     out_verbose(f"select tests     : {time.time() - t:5.1f}s  ({len(tests)} tests selected)")
 
     out_verbose(f"total            : {time.time() - t0:5.1f}s")

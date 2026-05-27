@@ -33,25 +33,25 @@ def prepare_case():
         except KeyError:
             pass
         case_folder = prepare_src_folder(group)  # copy files to a temporary test folder
-        git_init_repo(case_folder)  # git init
+        base_commit = git_init_repo(case_folder)  # git init
 
         logger.debug(f"\n\n\n---- RUNNING PYTEST FOR THE FIRST TIME -----------")
         # This does everything, run pytest with covtest plugin, parse code, stores DB
         run_pytest(case_folder)
 
-        cached[group] = case_folder
-        return case_folder
+        cached[group] = case_folder, base_commit
+        return case_folder, base_commit
 
     return case_generator
 
 
-def change_and_predict(case, case_folder):
+def change_and_predict(case, case_folder, base_commit):
     logger.debug(f"\n\n\n---- DOING CODE CHANGES -----------")
     run("git checkout -- .", cwd=case_folder)
     expected_tests = do_code_changes(case_folder, case)
 
     logger.debug(f"\n\n\n---- PREDICT TESTS -----------")
-    predicted_tests = predict_tests(case_folder, None)
+    predicted_tests = predict_tests(case_folder, base_commit)
     logger.debug(f"Predicted tests: {predicted_tests}")
     assert predicted_tests == expected_tests
 
@@ -60,40 +60,40 @@ def change_and_predict(case, case_folder):
 def test_mymath(prepare_case, case):
     """ test basic cases
     """
-    case_folder = prepare_case("mymath")
-    change_and_predict(case, case_folder)
+    case_folder, base_commit = prepare_case("mymath")
+    change_and_predict(case, case_folder, base_commit)
 
 
 @pytest.mark.parametrize("case", collect_cases("structs"), ids=os.path.basename)
 def test_structs(prepare_case, case):
     """ test advanced cases
     """
-    case_folder = prepare_case("structs")
-    change_and_predict(case, case_folder)
+    case_folder, base_commit = prepare_case("structs")
+    change_and_predict(case, case_folder, base_commit)
 
 
 @pytest.mark.parametrize("case", collect_cases("files"), ids=os.path.basename)
 def test_files(prepare_case, case):
     """ tests that file assests included in the test suite also fire tests if modified
     """
-    case_folder = prepare_case("files")
-    change_and_predict(case, case_folder)
+    case_folder, base_commit = prepare_case("files")
+    change_and_predict(case, case_folder, base_commit)
 
 
 @pytest.mark.parametrize("case", collect_cases("globals"), ids=os.path.basename)
 def test_globals(prepare_case, case):
     """ tests using global methods and variables
     """
-    case_folder = prepare_case("globals")
-    change_and_predict(case, case_folder)
+    case_folder, base_commit = prepare_case("globals")
+    change_and_predict(case, case_folder, base_commit)
 
 
 @pytest.mark.parametrize("case", collect_cases("imports"), ids=os.path.basename)
 def test_imports(prepare_case, case):
     """ Test with imports over files
     """
-    case_folder = prepare_case("imports")
-    change_and_predict(case, case_folder)
+    case_folder, base_commit = prepare_case("imports")
+    change_and_predict(case, case_folder, base_commit)
 
 
 @pytest.mark.parametrize("case", collect_cases("contexts"), ids=os.path.basename)
@@ -107,8 +107,8 @@ def test_contexts(case):
 def test_pyfiles(prepare_case, case):
     """Modifying a project configuration file must cause predict_tests to return
     None, signalling that all tests must run (impact prediction is not possible)."""
-    case_folder = prepare_case("pyfiles")
+    case_folder, base_commit = prepare_case("pyfiles")
     run("git checkout -- .", cwd=case_folder)
     do_code_changes(case_folder, case)
-    predicted_tests = predict_tests(case_folder, None)
+    predicted_tests = predict_tests(case_folder, base_commit)
     assert predicted_tests is None

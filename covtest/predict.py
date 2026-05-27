@@ -1,8 +1,7 @@
 import logging
-import os
 
 from covtest.config import read_config
-from covtest.covtest import predict_tests, get_base_commit, COVTEST_FOLDER
+from covtest.covtest import predict_tests, get_base_commit
 from covtest.covtest_data import PartialData
 from covtest.git import git_dirty
 from covtest.output import out_info, set_verbose
@@ -28,21 +27,18 @@ def pytest_collection_modifyitems(session, config, items):
 
 
 def covtest_modifyitems(session, config, items):
-    folder = session.startpath
+    project_folder = session.config.rootpath
     context = config.getoption("covtest_context", default=None)
     out_info("predicting tests")
 
     # Locate snapshot; keep base_commit for the partial save below
-    folder = str(folder)
-    covtest_folder = os.path.join(folder, COVTEST_FOLDER)
-    cfg = read_config(folder)
-    base_commit = get_base_commit(folder, covtest_folder, cfg)
+    cfg = read_config(project_folder)
+    base_commit = get_base_commit(project_folder, cfg)
     if base_commit is None:
         out_info("no covtest data found — running all tests")
         return
-    covtest_file = os.path.join(covtest_folder, base_commit + ".covtest")
 
-    optimized_tests = predict_tests(folder, covtest_file, base_commit)
+    optimized_tests = predict_tests(project_folder, base_commit)
     if optimized_tests is None:
         out_info("configuration file changed — running all tests")
         return

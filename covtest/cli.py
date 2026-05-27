@@ -5,7 +5,7 @@ import os.path
 import sys
 from pathlib import Path
 
-from covtest.config import read_config, read_server_url, config_list_info
+from covtest.config import read_config, config_list_info
 from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, COVTEST_FOLDER
 from covtest.errors import CovTestException
 from covtest.git import git_commits
@@ -150,6 +150,27 @@ def _parse_args(argv):
         help="Project directory (defaults to current directory)",
     )
 
+    p_debug = sub.add_parser(
+        "debug",
+        parents=[ctx],
+        help="Debugging and introspection commands",
+    )
+    debug_sub = p_debug.add_subparsers(dest="debug_command", required=True)
+    p_debug_source = debug_sub.add_parser(
+        "source",
+        help="Show a source file line by line with the tests covering each line",
+    )
+    p_debug_source.add_argument(
+        "pattern",
+        help="File pattern to match against the snapshot, e.g. '*mysource.py'",
+    )
+    p_debug_source.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Project directory (defaults to current directory)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -223,7 +244,7 @@ def main(argv=None):
         auth_user = args.user or cfg.get("auth_user")
         auth_password = args.password or cfg.get("auth_password")
         auth_token = args.token or cfg.get("auth_token")
-        commit = git_commits(folder)[-1]  # just the last, current commit
+        commit = git_commits(folder)[0]  # just the last, current commit
         covtest_file = os.path.join(folder, COVTEST_FOLDER, commit + ".covtest")
         if not os.path.exists(covtest_file):
             raise CovTestException(f"The covtest file to upload does not exist: {covtest_file}")
@@ -255,6 +276,7 @@ def main(argv=None):
             out_info("configuration file changed — all tests must run, no covtests.tests written")
             return 1
 
+        out_info(f"Predicted {len(tests)} tests")
         # group tests by context:
         contexts = {}
         for t in tests:
@@ -263,6 +285,7 @@ def main(argv=None):
 
         for context, tests in contexts.items():
             f = "covtests.tests" if not context else f"covtests.{context}.tests"
+            out_info(f"Saving file with predicted tests {f}")
             filename = os.path.join(str(folder), COVTEST_FOLDER, f)
             save(filename, "\n".join(sorted(tests)))
             out_verbose(f"saved {len(tests)} tests -> {filename}")
@@ -334,6 +357,69 @@ def main(argv=None):
                 else:
                     display = "***" if key in _SENSITIVE_KEYS else val
                     print(f"  {key:<20} = {display}")
+
+            return 0
+
+    if args.command == "debug":
+        if args.debug_command == "source":
+            import fnmatch
+            from covtest.covtest_data import CovTestData
+            from covtest.covtest import get_base_commit
+
+            project_folder = folder
+            cfg = read_config(project_folder)
+            base_commit = get_base_commit(project_folder, cfg)
+            if base_commit is None:
+                print("covtest error: no covtest data found — run 'covtest process' first.",
+                      file=sys.stderr)
+                return -1
+
+            covtest_file = folder / COVTEST_FOLDER / (base_commit + ".covtest")
+            out_info(f"snapshot: {covtest_file}")
+
+            covdata = CovTestData.load(covtest_file)
+            pattern = args.pattern
+
+            matched = {
+                fp: line_data
+                for fp, line_data in covdata.py_files.items()
+                if fnmatch.fnmatch(fp, pattern) or fnmatch.fnmatch(os.path.basename(fp), pattern)
+            }
+
+            if not matched:
+                print(f"No files matching '{pattern}' found in snapshot.")
+                return 0
+
+            for filepath, line_data in sorted(matched.items()):
+                src_path = os.path.join(str(folder), filepath.replace("/", os.sep))
+
+                if os.path.isfile(src_path):
+                    with open(src_path, encoding="utf-8", errors="replace") as fh:
+                        source_lines = fh.read().splitlines()
+                    n_lines = len(source_lines)
+                else:
+                    source_lines = None
+                    n_lines = max(line_data.keys(), default=0)
+
+                n_covered = len(line_data)
+                width = len(str(n_lines))
+                header = f"{filepath}  ({n_covered} lines with test coverage)"
+                print(f"\n{header}")
+                print("─" * len(header))
+
+                if source_lines:
+                    for lineno, src_line in enumerate(source_lines, 1):
+                        tests = line_data.get(lineno)
+                        print(f"  {lineno:{width}} │ {src_line}")
+                        if tests:
+                            for t in sorted(tests):
+                                print(f"  {' ' * width} │   ↳ {t}")
+                else:
+                    print(f"  (source not found at {src_path} — snapshot data only)")
+                    for lineno, tests in sorted(line_data.items()):
+                        print(f"  {lineno:{width}} │ <line {lineno}>")
+                        for t in sorted(tests):
+                            print(f"  {' ' * width} │   ↳ {t}")
 
             return 0
 

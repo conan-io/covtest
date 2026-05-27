@@ -184,18 +184,19 @@ def covtest_postprocess(folder, covtest_file=None):
     """
     t0 = time.time()
 
-    out_verbose("extracting coverage data ...")
+    out_info("extracting coverage data from .coverage DB")
     t = time.time()
     cov_data = extract_coverage(folder)
     out_verbose(f"Coverage results:\n{str_nested_dict(cov_data)}")
-    out_verbose(f"extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
+    out_info(f"extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
 
-    out_verbose("parsing source files ...")
+    out_info("parsing source files ...")
     t = time.time()
     parse_results = ParsedData(folder)
-    out_verbose(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
+    out_info(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
 
     opened_files = os.path.join(folder, ".covtest", "file_open")
+    out_info("processing opened files")
     if os.path.exists(opened_files):
         opened_files = load(opened_files).splitlines()
         opened_files = [o.split("=") for o in opened_files]
@@ -204,29 +205,29 @@ def covtest_postprocess(folder, covtest_file=None):
     else:
         opened_files = None
 
-    out_verbose("building coverage mappings ...")
+    out_info("building coverage mappings ...")
     t = time.time()
     # TODO: incremental update of covtestdata
     cov_test_data = CovTestData.create(cov_data, parse_results, opened_files)
     out_verbose(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
-    out_verbose(f"build mappings   : {time.time() - t:5.1f}s")
+    out_info(f"build mappings   : {time.time() - t:5.1f}s")
+    out_info(f"Coverage covtest summary:\n{cov_test_data.summary()}")
 
     base_commit = git_commits(folder, 1)[0]
     if git_dirty(folder):  # In case it is dirty
-        out_verbose(f"Covtest not storing data because repo is dirty: {folder}")
-        out_verbose(f"total            : {time.time() - t0:5.1f}s  (dirty repo, snapshot not saved)")
+        out_info(f"WARNING: Covtest not storing data because repo is dirty: {folder}")
+        out_info(f"total            : {time.time() - t0:5.1f}s  (dirty repo, snapshot not saved)")
         return
 
     if covtest_file is None:
         covtest_file = os.path.join(folder, COVTEST_FOLDER, base_commit + ".covtest")
     covtest_file = os.path.abspath(covtest_file)
 
-    out_verbose("saving snapshot ...")
+    out_info("saving snapshot ...")
     t = time.time()
     cov_test_data.save(covtest_file)
-    out_verbose(f"save snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
-
-    out_verbose(f"total            : {time.time() - t0:5.1f}s")
+    out_info(f"save snapshot    : {time.time() - t:5.1f}s  ({covtest_file})")
+    out_info(f"total            : {time.time() - t0:5.1f}s")
 
 
 _NOT_FOUND_CACHE_FILE = "server_not_found.json"

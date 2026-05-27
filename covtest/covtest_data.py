@@ -15,6 +15,18 @@ class CovTestData:
         self.py_files = py_files or {}
         self.scopes = scopes or {}
 
+    def summary(self):
+        result = [f"Data files: {len(self.data_files)}",
+                  f"Py files: {len(self.py_files)}"]
+        all_tests = set()
+        for tests in self.data_files.values():
+            all_tests.update(tests)
+        for tests in self.py_files.values():
+            for line_tests in tests.values():
+                all_tests.update(line_tests)
+        result.append(f"Annotated tests: {len(all_tests)}")
+        return "\n".join(result)
+
     @staticmethod
     def create(coverage_data, parse_data, opened_files):
         result = CovTestData()

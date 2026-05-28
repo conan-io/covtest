@@ -61,6 +61,11 @@ def download(server_url, commit, dest_dir, user=None, password=None, token=None)
             f.write(data)
         logger.info("Downloaded covtest data to %s", dest)
         return dest
+    except urllib.error.HTTPError as e:
+        print(f"HTTP Error {e.code}: {e.reason}")
+        # Read Artifactory's custom error response body (usually JSON or HTML)
+        print(e.read().decode("utf-8", errors="ignore"))
     except urllib.error.URLError as e:
         logger.warning("Could not download covtest data from %s: %s", url, e)
+        print("Could not download covtest data from %s: %s-%s", url, e, e.reason)
         return None

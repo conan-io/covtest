@@ -291,6 +291,10 @@ def get_base_commit(project_folder, cfg):
 
         not_found[commit] = now
 
+    if not result and not server_url:
+        out_info("No covtest information found locally, but 'server_url' not defined\n"
+                 "Remember to define 'server_url' in conf ('covtest config list') if covtest data"
+                 "was computed in CI")
     # prune the not_found cache to 100
     not_found = dict(list(not_found.items())[-100:])
     _save_not_found_cache(covtest_folder, not_found)

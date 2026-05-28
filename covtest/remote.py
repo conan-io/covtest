@@ -1,8 +1,8 @@
 import base64
 import logging
 import os
-import urllib.error
-import urllib.request
+
+import requests
 
 from covtest.errors import CovTestException
 
@@ -10,11 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def _auth_headers(user=None, password=None, token=None):
-    """Build an Authorization header dict for the given credentials.
-
-    Token auth takes precedence over basic auth when both are supplied.
-    Returns an empty dict when no credentials are provided.
-    """
     if token:
         return {"Authorization": f"Bearer {token}"}
     if user and password:
@@ -24,48 +19,39 @@ def _auth_headers(user=None, password=None, token=None):
 
 
 def upload(server_url, covtest_file, user=None, password=None, token=None):
-    """Upload a .covtest file to the remote server via HTTP PUT.
-
-    Authentication priority: token > basic (user+password) > none.
-    """
     url = "{}/{}".format(server_url.rstrip("/"), os.path.basename(covtest_file))
     logger.info("Uploading covtest data to %s", url)
     with open(covtest_file, "rb") as f:
         data = f.read()
     headers = _auth_headers(user, password, token)
-    req = urllib.request.Request(url, data=data, method="PUT", headers=headers)
     try:
-        with urllib.request.urlopen(req) as resp:
-            logger.info("Upload successful: %s", resp.status)
-    except urllib.error.URLError as e:
+        resp = requests.put(url, data=data, headers=headers)
+        resp.raise_for_status()
+        logger.info("Upload successful: %s", resp.status_code)
+    except requests.RequestException as e:
         raise CovTestException("Failed to upload covtest data to {}: {}".format(url, e))
 
 
 def download(server_url, commit, dest_dir, user=None, password=None, token=None):
-    """Download a .covtest file from the remote server via HTTP GET.
-
-    Authentication priority: token > basic (user+password) > none.
-    Returns the local path on success, None if the file was not found or the
-    server could not be reached.
-    """
     url = "{}/{}.covtest".format(server_url.rstrip("/"), commit)
     dest = os.path.join(dest_dir, "{}.covtest".format(commit))
     logger.info("Downloading covtest data from %s", url)
     os.makedirs(dest_dir, exist_ok=True)
     headers = _auth_headers(user, password, token)
-    req = urllib.request.Request(url, headers=headers)
     try:
-        with urllib.request.urlopen(req) as resp:
-            data = resp.read()
+        resp = requests.get(url, headers=headers, allow_redirects=True)
+        if resp.status_code == 404:
+            logger.warning("Could not download covtest data from %s: 404 Not Found", url)
+            return None
+        resp.raise_for_status()
         with open(dest, "wb") as f:
-            f.write(data)
+            f.write(resp.content)
         logger.info("Downloaded covtest data to %s", dest)
         return dest
-    except urllib.error.HTTPError as e:
-        print(f"HTTP Error {e.code}: {e.reason}")
-        # Read Artifactory's custom error response body (usually JSON or HTML)
-        print(e.read().decode("utf-8", errors="ignore"))
-    except urllib.error.URLError as e:
+    except requests.HTTPError as e:
+        print(f"HTTP Error {e.response.status_code}: {e.response.reason}")
+        print(e.response.text)
+    except requests.RequestException as e:
         logger.warning("Could not download covtest data from %s: %s", url, e)
-        print("Could not download covtest data from %s: %s-%s", url, e, e.reason)
+        print("Could not download covtest data from %s: %s", url, e)
         return None

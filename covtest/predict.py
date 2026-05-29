@@ -4,9 +4,19 @@ from covtest.config import read_config
 from covtest.covtest import predict_tests, get_base_commit
 from covtest.covtest_data import PartialData
 from covtest.git import git_dirty
-from covtest.output import out_info, set_verbose
+from covtest.output import out_info, set_level, INFO, VERBOSE, DEBUG, TRACE
 
 logger = logging.getLogger(__name__)
+
+
+def _covtest_level(config):
+    if config.getoption("--covtest-vvv", default=False):
+        return TRACE
+    if config.getoption("--covtest-vv", default=False):
+        return DEBUG
+    if config.getoption("--covtest-verbose", default=False):
+        return VERBOSE
+    return INFO
 
 
 def pytest_addoption(parser):
@@ -15,14 +25,32 @@ def pytest_addoption(parser):
             "--covtest-verbose",
             action="store_true",
             default=False,
-            help="Show covtest per-step timing output",
+            help="Show covtest timing/detail output (VERBOSE)",
         )
     except ValueError:
-        pass  # already registered by covtest.process when both plugins are loaded
+        pass
+    try:
+        parser.addoption(
+            "--covtest-vv",
+            action="store_true",
+            default=False,
+            help="Show covtest debug output (DEBUG)",
+        )
+    except ValueError:
+        pass
+    try:
+        parser.addoption(
+            "--covtest-vvv",
+            action="store_true",
+            default=False,
+            help="Show covtest trace output (TRACE)",
+        )
+    except ValueError:
+        pass
 
 
 def pytest_collection_modifyitems(session, config, items):
-    set_verbose(config.getoption("--covtest-verbose", default=False))
+    set_level(_covtest_level(config))
     return covtest_modifyitems(session, config, items)
 
 
@@ -31,7 +59,6 @@ def covtest_modifyitems(session, config, items):
     context = config.getoption("covtest_context", default=None)
     out_info("predicting tests")
 
-    # Locate snapshot; keep base_commit for the partial save below
     cfg = read_config(project_folder)
     base_commit = get_base_commit(project_folder, cfg)
     if base_commit is None:
@@ -48,23 +75,18 @@ def covtest_modifyitems(session, config, items):
     config.hook.pytest_deselected(items=deselected)
     out_info(f"selected {len(items)} test(s)")
 
-    # Stash state for pytest_sessionfinish
     session._covtest_base_commit = base_commit
     session._covtest_selected = [t.nodeid for t in selected]
 
 
 def pytest_sessionfinish(session, exitstatus):
     """Save partial snapshot so covtest merge can forward it to the next commit."""
-    # Only the controller (or a plain non-distributed session) writes the
-    # partial; workers must not write it or they race each other on disk.
     base_commit = getattr(session, "_covtest_base_commit", None)
     if base_commit is None:
-        return  # prediction didn't run (no snapshot found or config-file change)
+        return
 
     case_folder = str(session.startpath)
 
-    # Only save partial during active development (dirty working tree).
-    # A clean tree means we are in a full-process CI run — skip.
     if not git_dirty(case_folder):
         return
 

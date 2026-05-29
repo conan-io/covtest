@@ -1,5 +1,4 @@
 import argparse
-import logging
 import sys
 from pathlib import Path
 
@@ -13,18 +12,24 @@ from covtest.cli.commands import (
     cmd_process,
     cmd_upload,
 )
-from covtest.output import set_verbose
+from covtest.output import DEBUG, INFO, SILENT, TRACE, VERBOSE, WARNING, set_level
 
 
 def _parse_args(argv):
     parser = argparse.ArgumentParser(prog="covtest")
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "-v", dest="verbosity", action="count", default=0,
+        help="Increase verbosity: -v VERBOSE, -vv DEBUG, -vvv TRACE",
+    )
+    parser.add_argument(
+        "-q", dest="quietness", action="count", default=0,
+        help="Decrease verbosity: -q warnings+errors only, -qq errors only",
+    )
 
-    ctx = argparse.ArgumentParser(add_help=False)
+    sub = parser.add_subparsers(dest="command", required=True)
 
     p_process = sub.add_parser(
         "process",
-        parents=[ctx],
         help="Process .coverage and store .covtest data",
     )
     p_process.add_argument(
@@ -37,15 +42,9 @@ def _parse_args(argv):
         "-cf", "--covtest-file",
         help="Covtest file location"
     )
-    p_process.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show per-step timing and debug logging",
-    )
 
     p_predict = sub.add_parser(
         "predict",
-        parents=[ctx],
         help="Predict tests to run from git diff and stored covtest data",
     )
     p_predict.add_argument(
@@ -58,15 +57,9 @@ def _parse_args(argv):
         "-cf", "--covtest-file",
         help="Covtest file location"
     )
-    p_predict.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show per-step timing and debug logging",
-    )
 
     p_merge = sub.add_parser(
         "merge",
-        parents=[ctx],
         help="Merge partial covtest data with the base snapshot to create a new snapshot",
     )
     p_merge.add_argument(
@@ -75,15 +68,9 @@ def _parse_args(argv):
         type=Path,
         help="Project directory",
     )
-    p_merge.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show per-step timing",
-    )
 
     p_upload = sub.add_parser(
         "upload",
-        parents=[ctx],
         help="Upload .covtest data for the current commit to the configured server",
     )
     p_upload.add_argument(
@@ -113,15 +100,9 @@ def _parse_args(argv):
         help="Bearer token for token-based auth, e.g. JFrog Artifactory access token or API key "
              "(env: COVTEST_TOKEN)",
     )
-    p_upload.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show debug logging",
-    )
 
     p_diff = sub.add_parser(
         "diff",
-        parents=[ctx],
         help="Show what covtest would predict: snapshot source, diff summary, and selected tests",
     )
     p_diff.add_argument(
@@ -130,15 +111,9 @@ def _parse_args(argv):
         type=Path,
         help="Project directory (defaults to current directory)",
     )
-    p_diff.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show extra debug output",
-    )
 
     p_config = sub.add_parser(
         "config",
-        parents=[ctx],
         help="Inspect covtest configuration",
     )
     config_sub = p_config.add_subparsers(dest="config_command", required=True)
@@ -155,7 +130,6 @@ def _parse_args(argv):
 
     p_debug = sub.add_parser(
         "debug",
-        parents=[ctx],
         help="Debugging and introspection commands",
     )
     debug_sub = p_debug.add_subparsers(dest="debug_command", required=True)
@@ -180,10 +154,8 @@ def _parse_args(argv):
 def main(argv=None):
     args = _parse_args(sys.argv[1:] if argv is None else argv)
 
-    verbose = getattr(args, "verbose", False)
-    set_verbose(verbose)
-    level = logging.DEBUG if verbose else logging.WARNING
-    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
+    level = max(SILENT, min(TRACE, INFO + args.verbosity - args.quietness))
+    set_level(level)
 
     folder = args.path.resolve() if args.path else Path.cwd()
     if not folder.is_dir():

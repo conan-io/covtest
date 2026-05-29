@@ -1,4 +1,3 @@
-import logging
 import os
 import os.path
 import sys
@@ -7,10 +6,8 @@ from covtest.config import read_config, config_list_info
 from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, COVTEST_FOLDER
 from covtest.errors import CovTestException
 from covtest.git import git_commits
-from covtest.output import out_info, out_verbose
+from covtest.output import out_info, out_verbose, out_error, out_warning
 from covtest.util.files import save
-
-logger = logging.getLogger(__name__)
 
 
 def _split_context_test(t):
@@ -26,7 +23,7 @@ def cmd_process(args, folder):
     try:
         covtest_postprocess(str(folder), args.covtest_file)
     except CovTestException as e:
-        logger.error(e)
+        out_error(str(e))
         return -1
     out_info("done")
     return 0
@@ -37,7 +34,7 @@ def cmd_merge(args, folder):
     try:
         covtest_merge(str(folder))
     except CovTestException as e:
-        print(f"covtest error: {e}", file=sys.stderr)
+        out_error(str(e))
         return 1
     out_info("done")
     return 0
@@ -48,9 +45,8 @@ def cmd_upload(args, folder):
     cfg = read_config(str(folder))
     server_url = args.url or cfg.get("server_url")
     if not server_url:
-        print("covtest error: no server_url configured. "
-              "Pass --url, set COVTEST_URL, or add server_url to covtest.ini.",
-              file=sys.stderr)
+        out_error("no server_url configured. "
+                  "Pass --url, set COVTEST_URL, or add server_url to covtest.ini.")
         return 1
     auth_user = args.user or cfg.get("auth_user")
     auth_password = args.password or cfg.get("auth_password")
@@ -58,12 +54,13 @@ def cmd_upload(args, folder):
     commit = git_commits(folder)[0]
     covtest_file = os.path.join(folder, COVTEST_FOLDER, commit + ".covtest")
     if not os.path.exists(covtest_file):
-        raise CovTestException(f"The covtest file to upload does not exist: {covtest_file}")
+        out_error(f"The covtest file to upload does not exist: {covtest_file}")
+        return 1
     try:
         upload(server_url, covtest_file,
                user=auth_user, password=auth_password, token=auth_token)
     except CovTestException as e:
-        logger.error(e)
+        out_error(str(e))
         return 1
     return 0
 
@@ -80,8 +77,7 @@ def cmd_predict(args, folder):
 
     tests = predict_tests(folder, base_commit)
     if tests == -1:
-        print("covtest error: no covtest data found — run 'covtest process' first.",
-              file=sys.stderr)
+        out_error("no covtest data found — run 'covtest process' first.")
         return -1
     if tests is None:
         out_info("configuration file changed — all tests must run, no covtests.tests written")
@@ -112,8 +108,7 @@ def cmd_diff(args, folder):
     base_commit = get_base_commit(folder, cfg)
 
     if base_commit is None:
-        print("covtest error: no covtest data found — run 'covtest process' first.",
-              file=sys.stderr)
+        out_error("no covtest data found — run 'covtest process' first.")
         return -1
 
     out_info(f"git diff: HEAD vs {base_commit[:8]}")
@@ -177,8 +172,7 @@ def cmd_debug(args, folder):
         cfg = read_config(folder)
         base_commit = get_base_commit(folder, cfg)
         if base_commit is None:
-            print("covtest error: no covtest data found — run 'covtest process' first.",
-                  file=sys.stderr)
+            out_error("no covtest data found — run 'covtest process' first.")
             return -1
 
         covtest_file = folder / COVTEST_FOLDER / (base_commit + ".covtest")

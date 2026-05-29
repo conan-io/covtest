@@ -6,9 +6,19 @@ import pytest
 
 from covtest.covtest import covtest_postprocess
 from covtest.git import git_dirty
-from covtest.output import out_info, set_verbose
+from covtest.output import out_info, set_level, INFO, VERBOSE, DEBUG, TRACE
 
 logger = logging.getLogger(__name__)
+
+
+def _covtest_level(config):
+    if config.getoption("--covtest-vvv", default=False):
+        return TRACE
+    if config.getoption("--covtest-vv", default=False):
+        return DEBUG
+    if config.getoption("--covtest-verbose", default=False):
+        return VERBOSE
+    return INFO
 
 
 @pytest.hookimpl(wrapper=True)
@@ -37,10 +47,28 @@ def pytest_addoption(parser):
             "--covtest-verbose",
             action="store_true",
             default=False,
-            help="Show covtest per-step timing output",
+            help="Show covtest timing/detail output (VERBOSE)",
         )
     except ValueError:
-        pass  # already registered by covtest.predict when both plugins are loaded
+        pass
+    try:
+        parser.addoption(
+            "--covtest-vv",
+            action="store_true",
+            default=False,
+            help="Show covtest debug output (DEBUG)",
+        )
+    except ValueError:
+        pass
+    try:
+        parser.addoption(
+            "--covtest-vvv",
+            action="store_true",
+            default=False,
+            help="Show covtest trace output (TRACE)",
+        )
+    except ValueError:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +91,7 @@ def patch_open(request):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    set_verbose(session.config.getoption("--covtest-verbose", default=False))
+    set_level(_covtest_level(session.config))
     case_folder = str(session.startpath)
     if git_dirty(case_folder):
         out_info("working tree has uncommitted changes — snapshot not saved")

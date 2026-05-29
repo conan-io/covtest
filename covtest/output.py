@@ -1,33 +1,44 @@
-"""
-Lightweight output helpers for covtest.
+import sys
 
-Two levels:
-  out_info(msg)    — always printed, prefixed with "covtest: "
-  out_verbose(msg) — printed only when verbose mode is on (indented, no prefix)
+SILENT = 0   # errors only
+WARNING = 1  # warnings + errors
+INFO = 2     # status lines (default)
+VERBOSE = 3  # timing / detail
+DEBUG = 4    # internal debug
+TRACE = 5    # raw data dumps
 
-Call set_verbose(True) once at startup (CLI flag or plugin option) to enable
-the verbose level.
-"""
-
-_verbose = False
+_level = INFO
 
 
-def set_verbose(verbose: bool) -> None:
-    global _verbose
-    _verbose = verbose
+def set_level(level: int) -> None:
+    global _level
+    _level = max(SILENT, min(TRACE, level))
 
 
 def out_info(msg: str) -> None:
-    """Top-level status line, always shown.
-
-    When writing to a real terminal, first erases the current line so that
-    pytest's in-progress "collecting N items" counter (written with \\r) is
-    cleanly replaced rather than left frozen on its own line.
-    """
-    print(f"covtest: {msg}")
+    if _level >= INFO:
+        print(f"covtest: {msg}")
 
 
 def out_verbose(msg: str) -> None:
-    """Indented detail / timing line, shown only in verbose mode."""
-    if _verbose:
+    if _level >= VERBOSE:
         print(f"  {msg}")
+
+
+def out_debug(msg: str) -> None:
+    if _level >= DEBUG:
+        print(f"  [debug] {msg}")
+
+
+def out_trace(msg: str) -> None:
+    if _level >= TRACE:
+        print(f"  [trace] {msg}")
+
+
+def out_warning(msg: str) -> None:
+    if _level >= WARNING:
+        print(f"covtest warning: {msg}", file=sys.stderr)
+
+
+def out_error(msg: str) -> None:
+    print(f"covtest error: {msg}", file=sys.stderr)

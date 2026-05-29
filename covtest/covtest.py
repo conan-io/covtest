@@ -256,6 +256,9 @@ def get_base_commit(project_folder, cfg):
     cache_ttl = cfg["server_cache_ttl"]
     server_url = cfg.get("server_url")
 
+    if not server_url:
+        out_info("server not configured — skipping remote snapshot check")
+
     commits = git_commits(project_folder, max_commits)
 
     covtest_folder = project_folder / COVTEST_FOLDER

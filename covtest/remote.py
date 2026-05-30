@@ -4,7 +4,7 @@ import os
 import requests
 
 from covtest.errors import CovTestException
-from covtest.output import out_verbose, out_warning, out_info
+from covtest.output import out_warning, out_info
 
 
 def _auth_headers(user=None, password=None, token=None):

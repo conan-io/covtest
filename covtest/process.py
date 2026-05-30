@@ -1,5 +1,4 @@
 import builtins
-import logging
 import os
 
 import pytest
@@ -7,8 +6,6 @@ import pytest
 from covtest.covtest import covtest_postprocess
 from covtest.git import git_dirty
 from covtest.output import out_info, set_level, INFO, VERBOSE, DEBUG, TRACE
-
-logger = logging.getLogger(__name__)
 
 
 def _covtest_level(config):

@@ -1,10 +1,7 @@
 import ast
-import logging
 import os
 
 from covtest.util.files import load
-
-logger = logging.getLogger(__name__)
 
 
 class ParsedData:

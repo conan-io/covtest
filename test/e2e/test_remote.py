@@ -91,7 +91,7 @@ def _start_file_server(root_dir):
 
 
 def _start_auth_file_server(root_dir, expected_token=None,
-                             expected_user=None, expected_password=None):
+                            expected_user=None, expected_password=None):
     server = HTTPServer(("127.0.0.1", 0), _AuthFileServerHandler)
     server.root_dir = root_dir
     server.expected_token = expected_token

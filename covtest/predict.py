@@ -1,12 +1,8 @@
-import logging
-
 from covtest.config import read_config
 from covtest.covtest import predict_tests, get_base_commit
 from covtest.covtest_data import PartialData
 from covtest.git import git_dirty
 from covtest.output import out_info, set_level, INFO, VERBOSE, DEBUG, TRACE
-
-logger = logging.getLogger(__name__)
 
 
 def _covtest_level(config):

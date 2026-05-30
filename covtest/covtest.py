@@ -1,6 +1,5 @@
 import fnmatch
 import json
-import logging
 import os
 import subprocess
 import time
@@ -16,7 +15,6 @@ from covtest.git import git_commits, git_diff, git_dirty
 from covtest.output import out_verbose, out_info
 from covtest.util.files import load, chdir
 
-logger = logging.getLogger(__name__)
 COVTEST_FOLDER = ".covtest"
 
 # Sentinel returned by predict_tests when a project configuration file was

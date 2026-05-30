@@ -1,9 +1,5 @@
-import logging
-
 from covtest.util.files import chdir
 from covtest.util.run import run
-
-logger = logging.getLogger(__name__)
 
 
 def git_commits(folder, n=1):

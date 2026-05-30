@@ -85,73 +85,71 @@ def extract_coverage(folder):
     return result
 
 
-def suite_to_run(covdata, modified, inserted, folder):
-    """ compute which tests to run given the conandata and the
-    modified files and lines
+def suite_to_run(covdata, diff_result, folder):
+    """Compute which tests to run given the coverage snapshot and the diff result.
+
+    diff_result: {filename: {"modified": [...], "deleted": [...], "inserted": [...]}}
+      modified  — source-side line numbers of replacements
+      deleted   — source-side line numbers of pure removals
+      inserted  — target-side line numbers of pure additions (blank lines excluded)
     """
     data_files = covdata.data_files
     py_files = covdata.py_files
     scopes = covdata.scopes
     result = set()
-    for filename, modified_lines in modified.items():
+
+    for filename, file_diff in diff_result.items():
+        # Source-side changes: both replacements and deletions need their covering tests.
+        source_lines = sorted(set(file_diff["modified"] + file_diff["deleted"]))
+        inserted_lines = file_diff["inserted"]
+
         if data_files:
             tests = data_files.get(filename)
             if tests is not None:
                 result.update(tests)
                 continue
+
         m = py_files.get(filename)
         if m is None:
             out_verbose("FILE %s does not contain test data" % filename)
             continue
-        for line in modified_lines:
+
+        # Tests covering the changed source lines
+        for line in source_lines:
             tests = m.get(line, ())
             out_verbose(f"      {filename}:{line} => {tests}")
             for t in tests:
                 if t:
                     result.add(t)
-        # Now we need to check if modified lines are new tests
+
+        # Inserted lines: walk the enclosing scope to find covering tests.
+        # Only use the first line of each contiguous group — later lines in the
+        # same block can accidentally fall inside an old function's scope range
+        # and produce false positives.
+        if inserted_lines:
+            scope = scopes.get(filename)
+            if scope is not None:
+                group_starts = [
+                    line for i, line in enumerate(inserted_lines)
+                    if i == 0 or line != inserted_lines[i - 1] + 1
+                ]
+                for line in group_starts:
+                    for s in range(line, 0, -1):
+                        max_line = scope.get(s)
+                        if max_line is not None and s < line <= max_line:
+                            tests = m.get(s, ())
+                            for t in tests:
+                                if t:
+                                    result.add(t)
+                            break
+
+        # New tests in test files that didn't exist in the snapshot
         # TODO: Better filtering of test files, in case some production code is named "test"
         if "test" in filename:
             parsed_tests = extract_tests(folder, filename)
-            # The previously existing tests run by this unit
             existing_tests = set()
             for v in m.values():
                 existing_tests.update(v)
-            # Tests that are new, not previously existing, need to be run
-            for file_test in parsed_tests:
-                if file_test not in existing_tests:
-                    result.add(file_test)
-
-    for filename, inserted_lines in inserted.items():
-        m = py_files.get(filename)
-        if m is None:
-            out_verbose("FILE %s does not contain test data" % filename)
-            continue
-
-        scope = scopes.get(filename)
-        if scope is None:
-            continue
-
-        for line in inserted_lines:
-            for s in range(line, 0, -1):
-                max_line = scope.get(s)
-                if max_line is not None and s < line <= max_line:
-                    tests = m.get(s, ())
-                    # Find the line in the scope
-                    for t in tests:
-                        if t:
-                            result.add(t)
-                    break
-        # Now we need to check if modified lines are new tests
-        # TODO: Repeated from above
-        if "test" in filename:
-            # TODO: do not repeat this
-            parsed_tests = extract_tests(folder, filename)
-            # The previously existing tests run by this unit
-            existing_tests = set()
-            for v in m.values():
-                existing_tests.update(v)
-            # Tests that are new, not previously existing, need to be run
             for file_test in parsed_tests:
                 if file_test not in existing_tests:
                     result.add(file_test)
@@ -320,24 +318,25 @@ def predict_tests(project_folder, base_commit):
     t = time.time()
     text_diff = git_diff(project_folder, base_commit)
     out_verbose(f"git diff\n{text_diff}")
-    modified_lines, inserted_lines = diff(text_diff)
-    out_verbose(f"Modified lines\n{modified_lines}")
-    # Make it absolute paths to match with the DB
-    # TODO: Normalize paths
-    modified_lines = {f.replace("\\", "/"): lines for f, lines in modified_lines.items()}
-    inserted_lines = {f.replace("\\", "/"): lines for f, lines in inserted_lines.items()}
-    n_changed = sum(len(l) for l in modified_lines.values()) + sum(len(l) for l in inserted_lines.values())
-    out_verbose(f"compute diff     : {time.time() - t:5.1f}s  ({len({**modified_lines, **inserted_lines})} files, {n_changed} lines changed)")
+    diff_result = diff(text_diff)
+    # Normalise path separators to match the coverage DB
+    # TODO: Normalise paths more robustly
+    diff_result = {f.replace("\\", "/"): data for f, data in diff_result.items()}
+    out_verbose(f"Diff result\n{diff_result}")
+    n_changed = sum(
+        len(d["modified"]) + len(d["deleted"]) + len(d["inserted"])
+        for d in diff_result.values()
+    )
+    out_verbose(f"compute diff     : {time.time() - t:5.1f}s  ({len(diff_result)} files, {n_changed} lines changed)")
 
-    config_files = [f for f in {**modified_lines, **inserted_lines}
-                    if _is_config_file(f)]
+    config_files = [f for f in diff_result if _is_config_file(f)]
     if config_files:
         out_info(f"Pytest or project configuration files modified {config_files} — all tests must run")
         return None
 
     out_verbose("selecting tests ...")
     t = time.time()
-    tests = suite_to_run(covdata, modified_lines, inserted_lines, project_folder)
+    tests = suite_to_run(covdata, diff_result, project_folder)
     out_verbose(f"select tests     : {time.time() - t:5.1f}s  ({len(tests)} tests selected)")
 
     out_verbose(f"total            : {time.time() - t0:5.1f}s")

@@ -98,7 +98,6 @@ def suite_to_run(covdata, diff_result, folder):
     scopes = covdata.scopes
     result = set()
 
-    print(diff_result)
     for filename, file_diff in diff_result.items():
         # Source-side changes: both replacements and deletions need their covering tests.
         source_lines = sorted(set(file_diff["modified"] + file_diff["deleted"]))

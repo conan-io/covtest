@@ -50,8 +50,10 @@ def diff(text_diff):
             for i in range(n_mod, len(removed)):
                 dellines.append(removed[i].source_line_no)
             for i in range(n_mod, len(added)):
-                if added[i].value.strip():
-                    inslines.append(added[i].target_line_no)
+                # we cannot assume that inserted blank lines do not change anything! What if
+                # they change a text string?
+                # TODO: This can be optimized by syntactic diff, like difftastic
+                inslines.append(added[i].target_line_no)
 
         result[f.path] = {
             "modified": sorted(set(modlines)),

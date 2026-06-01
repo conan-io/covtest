@@ -52,7 +52,6 @@ def test_deleted_line():
 
 
 def test_inserted_line():
-    """Removing a line appears as a modified source line with no insertion."""
     before = textwrap.dedent("""\
         pytest
         coverage
@@ -69,6 +68,23 @@ def test_inserted_line():
     assert result["requirements.txt"]["modified"] == []
     assert result["requirements.txt"]["deleted"] == []  # refer the old file
     assert result["requirements.txt"]["inserted"] == [3]  # refer the new file
+
+
+def test_inserted_blank_line():
+    before = textwrap.dedent("""\
+        pytest
+        nose
+        """)
+    after = textwrap.dedent("""\
+        pytest
+
+        nose
+        """)
+    result = diff(make_diff("requirements.txt", before, after))
+    assert len(result) == 1
+    assert result["requirements.txt"]["modified"] == []
+    assert result["requirements.txt"]["deleted"] == []  # refer the old file
+    assert result["requirements.txt"]["inserted"] == [2]  # refer the new file
 
 
 def test_pure_insertion_between_functions():

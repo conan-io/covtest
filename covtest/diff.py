@@ -38,8 +38,8 @@ def diff(text_diff):
         dellines = []
         inslines = []
         for hunk in f:
-            removed = [l for l in hunk if l.is_removed]
-            added = [l for l in hunk if l.is_added]
+            removed = [line for line in hunk if line.is_removed]
+            added = [line for line in hunk if line.is_added]
             # Pair removals with additions in order.
             # Paired   → replacement (modified): keep the source line number.
             # Unpaired removal → true deletion.

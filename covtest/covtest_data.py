@@ -58,7 +58,7 @@ class CovTestData:
                             tests_ = test_data_[defined_line]
                             tests_.update(tests_from_usages)
                         except KeyError:
-                            pass # TODO: Same as above, globals not parsed
+                            pass  # TODO: Same as above, globals not parsed
 
         for file, test_data in self.py_files.items():
             # print("Extending mappings for", file)
@@ -200,7 +200,8 @@ class PartialData:
     def exists(folder):
         return os.path.exists(os.path.join(folder, ".covtest", _PARTIAL_FILE))
 
-    def delete(self, folder):
+    @staticmethod
+    def delete(folder):
         filepath = os.path.join(folder, ".covtest", _PARTIAL_FILE)
         if os.path.exists(filepath):
             os.remove(filepath)

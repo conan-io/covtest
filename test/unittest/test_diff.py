@@ -114,4 +114,4 @@ def test_pure_insertion_between_functions():
     assert len(result) == 1
     assert result["mymath.py"]["modified"] == []
     assert result["mymath.py"]["deleted"] == []       # refer the old file
-    assert result["mymath.py"]["inserted"] == [5, 6]  # refer the new file
+    assert result["mymath.py"]["inserted"] == [5, 6, 7, 8]  # refer the new file

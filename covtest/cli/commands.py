@@ -1,12 +1,11 @@
 import os
 import os.path
-import sys
 
 from covtest.config import read_config, config_list_info
 from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, COVTEST_FOLDER
 from covtest.errors import CovTestException
 from covtest.git import git_commits
-from covtest.output import out_info, out_verbose, out_error, out_warning
+from covtest.output import out_info, out_verbose, out_error
 from covtest.util.files import save
 
 
@@ -18,10 +17,10 @@ def _split_context_test(t):
     return t[:pipe], t[pipe + 1:]
 
 
-def cmd_process(args, folder):
+def cmd_process(folder):
     out_info("processing coverage data")
     try:
-        covtest_postprocess(str(folder), args.covtest_file)
+        covtest_postprocess(str(folder),)
     except CovTestException as e:
         out_error(str(e))
         return -1
@@ -29,7 +28,7 @@ def cmd_process(args, folder):
     return 0
 
 
-def cmd_merge(args, folder):
+def cmd_merge(folder):
     out_info("merging covtest data")
     try:
         covtest_merge(str(folder))
@@ -40,17 +39,17 @@ def cmd_merge(args, folder):
     return 0
 
 
-def cmd_upload(args, folder):
+def cmd_upload(folder, url=None, user=None, password=None, token=None):
     from covtest.remote import upload
     cfg = read_config(str(folder))
-    server_url = args.url or cfg.get("server_url")
+    server_url = url or cfg.get("server_url")
     if not server_url:
         out_error("no server_url configured. "
                   "Pass --url, set COVTEST_URL, or add server_url to covtest.ini.")
         return 1
-    auth_user = args.user or cfg.get("auth_user")
-    auth_password = args.password or cfg.get("auth_password")
-    auth_token = args.token or cfg.get("auth_token")
+    auth_user = user or cfg.get("auth_user")
+    auth_password = password or cfg.get("auth_password")
+    auth_token = token or cfg.get("auth_token")
     commit = git_commits(folder)[0]
     covtest_file = os.path.join(folder, COVTEST_FOLDER, commit + ".covtest")
     if not os.path.exists(covtest_file):
@@ -65,7 +64,7 @@ def cmd_upload(args, folder):
     return 0
 
 
-def cmd_predict(args, folder):
+def cmd_predict(folder):
     from covtest.covtest import get_base_commit
     out_info("predicting tests")
 
@@ -99,7 +98,7 @@ def cmd_predict(args, folder):
     return 0
 
 
-def cmd_diff(args, folder):
+def cmd_diff(folder):
     from covtest.covtest import get_base_commit
     from covtest.util.run import run
     from covtest.util.files import chdir
@@ -123,8 +122,8 @@ def cmd_diff(args, folder):
     return 0
 
 
-def cmd_config(args, folder):
-    if args.config_command == "list":
+def cmd_config(folder, config_command):
+    if config_command == "list":
         info = config_list_info(str(folder))
         _SENSITIVE_KEYS = {"auth_password", "auth_token"}
         _SENSITIVE_ENVS = {"COVTEST_PASSWORD", "COVTEST_TOKEN"}
@@ -163,8 +162,8 @@ def cmd_config(args, folder):
         return 0
 
 
-def cmd_debug(args, folder):
-    if args.debug_command == "source":
+def cmd_debug(folder, debug_command, pattern):
+    if debug_command == "source":
         import fnmatch
         from covtest.covtest_data import CovTestData
         from covtest.covtest import get_base_commit
@@ -179,7 +178,6 @@ def cmd_debug(args, folder):
         out_info(f"snapshot: {covtest_file}")
 
         covdata = CovTestData.load(covtest_file)
-        pattern = args.pattern
 
         matched = {
             fp: line_data

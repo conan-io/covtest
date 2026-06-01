@@ -373,8 +373,8 @@ def _build_line_mapping(patched_file):
             explicit[lineno] = lineno + offset
 
         # Separate removed and added lines within this hunk
-        removed = [l for l in hunk if l.is_removed]
-        added = [l for l in hunk if l.is_added]
+        removed = [line for line in hunk if line.is_removed]
+        added = [line for line in hunk if line.is_added]
 
         # Context lines: exact source→target mapping
         for line in hunk:

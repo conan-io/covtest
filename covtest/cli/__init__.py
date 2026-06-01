@@ -12,7 +12,7 @@ from covtest.cli.commands import (
     cmd_process,
     cmd_upload,
 )
-from covtest.output import DEBUG, INFO, SILENT, TRACE, VERBOSE, WARNING, set_level
+from covtest.output import INFO, SILENT, TRACE, set_level
 
 
 def _add_verbosity_args(p, *, add_defaults=True):
@@ -51,10 +51,6 @@ def _parse_args(argv):
         type=Path,
         help="Project directory containing .coverage",
     )
-    p_process.add_argument(
-        "-cf", "--covtest-file",
-        help="Covtest file location"
-    )
     _add_verbosity_args(p_process, add_defaults=False)
 
     p_predict = sub.add_parser(
@@ -66,10 +62,6 @@ def _parse_args(argv):
         nargs="?",
         type=Path,
         help="Project directory",
-    )
-    p_predict.add_argument(
-        "-cf", "--covtest-file",
-        help="Covtest file location"
     )
     _add_verbosity_args(p_predict, add_defaults=False)
 
@@ -178,8 +170,11 @@ def main(argv=None):
 
     level = max(SILENT, min(TRACE, INFO + args.verbosity - args.quietness))
     set_level(level)
+    delattr(args, "verbosity")
+    delattr(args, "quietness")
 
     folder = args.path.resolve() if args.path else Path.cwd()
+    delattr(args, "path")
     if not folder.is_dir():
         print(f"Not a directory: {folder}", file=sys.stderr)
         return 1
@@ -195,9 +190,11 @@ def main(argv=None):
     }
 
     handler = dispatch.get(args.command)
+    delattr(args, "command")
     if handler is None:
         raise AssertionError(f"unknown command: {args.command}")
-    return handler(args, folder)
+    cmd_args = {k: v for k, v in vars(args).items()}
+    return handler(folder, **cmd_args)
 
 
 if __name__ == "__main__":

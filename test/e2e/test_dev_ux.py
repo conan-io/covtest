@@ -73,7 +73,7 @@ def test_dev_ux_conf_test_files(method):
 def test_dev_ux_split_testing():
     src_folder = prepare_src_folder("contexts")
     c = TestClient(src_folder)
-    git_init_repo(src_folder)
+    commit = git_init_repo(src_folder)
 
     coveragerc = textwrap.dedent("""\
         [run]
@@ -84,10 +84,9 @@ def test_dev_ux_split_testing():
     assert "1 passed" in out
 
     # Check parsing the partial with contexts
-    c.run(f"process . --covtest-file=mycvfile")
-    content = CovTestData.load(os.path.join(src_folder, "mycvfile"))
+    c.run(f"process .")
+    content = CovTestData.load(os.path.join(src_folder, ".covtest", commit + ".covtest"))
     assert content.py_files["mymath.py"][2] == {'windows|mymath_test.py::MyMathTest::test_add'}
-    c.rm("mycvfile")
 
     # So it is not removed by next pytest
     c.mv(".coverage", "tmp/.coverage.win")

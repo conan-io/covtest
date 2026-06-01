@@ -15,16 +15,29 @@ from covtest.cli.commands import (
 from covtest.output import DEBUG, INFO, SILENT, TRACE, VERBOSE, WARNING, set_level
 
 
-def _parse_args(argv):
-    parser = argparse.ArgumentParser(prog="covtest")
-    parser.add_argument(
-        "-v", dest="verbosity", action="count", default=0,
+def _add_verbosity_args(p, *, add_defaults=True):
+    """Add -v / -q flags to a parser or subparser.
+
+    For the top-level parser use add_defaults=True so the namespace always
+    contains verbosity/quietness even when neither flag is supplied.
+    For subparsers use add_defaults=False (argparse.SUPPRESS): this lets the
+    flag be given *after* the subcommand while never resetting a value that
+    was already set by the top-level parser.
+    """
+    default = 0 if add_defaults else argparse.SUPPRESS
+    p.add_argument(
+        "-v", dest="verbosity", action="count", default=default,
         help="Increase verbosity: -v VERBOSE, -vv DEBUG, -vvv TRACE",
     )
-    parser.add_argument(
-        "-q", dest="quietness", action="count", default=0,
+    p.add_argument(
+        "-q", dest="quietness", action="count", default=default,
         help="Decrease verbosity: -q warnings+errors only, -qq errors only",
     )
+
+
+def _parse_args(argv):
+    parser = argparse.ArgumentParser(prog="covtest")
+    _add_verbosity_args(parser, add_defaults=True)
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -42,6 +55,7 @@ def _parse_args(argv):
         "-cf", "--covtest-file",
         help="Covtest file location"
     )
+    _add_verbosity_args(p_process, add_defaults=False)
 
     p_predict = sub.add_parser(
         "predict",
@@ -57,6 +71,7 @@ def _parse_args(argv):
         "-cf", "--covtest-file",
         help="Covtest file location"
     )
+    _add_verbosity_args(p_predict, add_defaults=False)
 
     p_merge = sub.add_parser(
         "merge",
@@ -68,6 +83,7 @@ def _parse_args(argv):
         type=Path,
         help="Project directory",
     )
+    _add_verbosity_args(p_merge, add_defaults=False)
 
     p_upload = sub.add_parser(
         "upload",
@@ -100,6 +116,7 @@ def _parse_args(argv):
         help="Bearer token for token-based auth, e.g. JFrog Artifactory access token or API key "
              "(env: COVTEST_TOKEN)",
     )
+    _add_verbosity_args(p_upload, add_defaults=False)
 
     p_diff = sub.add_parser(
         "diff",
@@ -111,6 +128,7 @@ def _parse_args(argv):
         type=Path,
         help="Project directory (defaults to current directory)",
     )
+    _add_verbosity_args(p_diff, add_defaults=False)
 
     p_config = sub.add_parser(
         "config",
@@ -127,6 +145,8 @@ def _parse_args(argv):
         type=Path,
         help="Project directory (defaults to current directory)",
     )
+    _add_verbosity_args(p_config, add_defaults=False)
+    _add_verbosity_args(p_config_list, add_defaults=False)
 
     p_debug = sub.add_parser(
         "debug",
@@ -147,6 +167,8 @@ def _parse_args(argv):
         type=Path,
         help="Project directory (defaults to current directory)",
     )
+    _add_verbosity_args(p_debug, add_defaults=False)
+    _add_verbosity_args(p_debug_source, add_defaults=False)
 
     return parser.parse_args(argv)
 

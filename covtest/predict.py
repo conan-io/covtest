@@ -53,6 +53,7 @@ def pytest_collection_modifyitems(session, config, items):
 def covtest_modifyitems(session, config, items):
     project_folder = session.config.rootpath
     context = config.getoption("covtest_context", default=None)
+    print(flush=True)  # The stdout from pytest uses line rewrite, causing issues
     out_info("predicting tests")
 
     cfg = read_config(project_folder)
@@ -89,4 +90,3 @@ def pytest_sessionfinish(session, exitstatus):
     selected_tests = getattr(session, "_covtest_selected", [])
 
     PartialData(base_commit, selected_tests).save(case_folder)
-    out_info("partial snapshot saved")

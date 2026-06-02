@@ -88,10 +88,11 @@ def extract_coverage(folder):
 def suite_to_run(covdata, diff_result, folder):
     """Compute which tests to run given the coverage snapshot and the diff result.
 
-    diff_result: {filename: {"modified": [...], "deleted": [...], "inserted": [...]}}
+    diff_result: {filename: {"modified": [...], "deleted": [...], "inserted": {...}}}
       modified  — source-side line numbers of replacements
       deleted   — source-side line numbers of pure removals
-      inserted  — target-side line numbers of pure additions (blank lines excluded)
+      inserted  — dict mapping old-file positions to the count of lines inserted
+                  after that position, e.g. {4: 3} means 3 lines after old line 4
     """
     data_files = covdata.data_files
     py_files = covdata.py_files
@@ -122,26 +123,32 @@ def suite_to_run(covdata, diff_result, folder):
                 if t:
                     result.add(t)
 
-        # Inserted lines: walk the enclosing scope to find covering tests.
-        # Only use the first line of each contiguous group — later lines in the
-        # same block can accidentally fall inside an old function's scope range
-        # and produce false positives.
+        # Inserted lines: find covering tests using old-file coordinates.
+        # inserted_lines is {old_pos: count} — lines were inserted after old_pos.
+        # Strategy: look up m.get(old_pos + 1) directly (the line that immediately
+        # follows the insertion in the old file).  That line shares the same
+        # scope as the new code UNLESS it starts a fresh scope (a new function or
+        # class), in which case the insertion sits between two scopes and we fall
+        # back to a backward scope search from old_pos.
         if inserted_lines:
             scope = scopes.get(filename)
             if scope is not None:
-                group_starts = [
-                    line for i, line in enumerate(inserted_lines)
-                    if i == 0 or line != inserted_lines[i - 1] + 1
-                ]
-                for line in group_starts:
-                    for s in range(line, 0, -1):
-                        max_line = scope.get(s)
-                        if max_line is not None and s < line <= max_line:
-                            tests = m.get(s, ())
-                            for t in tests:
-                                if t:
-                                    result.add(t)
-                            break
+                for old_pos in sorted(inserted_lines):
+                    next_line = old_pos + 1
+                    if scope.get(next_line) is None:
+                        # next_line is not a scope start — the insertion is inside
+                        # an existing scope; use the direct coverage lookup.
+                        tests = m.get(next_line, ())
+                        result.update(t for t in tests if t)
+                    else:
+                        # next_line starts a new scope; insertion is between two
+                        # scopes — fall back to backward search from old_pos.
+                        for s in range(old_pos, 0, -1):
+                            max_line = scope.get(s)
+                            if max_line is not None and s < old_pos <= max_line:
+                                tests = m.get(s, ())
+                                result.update(t for t in tests if t)
+                                break
 
         # New tests in test files that didn't exist in the snapshot
         # TODO: Better filtering of test files, in case some production code is named "test"

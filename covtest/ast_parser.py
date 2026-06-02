@@ -13,6 +13,7 @@ class ParsedData:
                     continue
                 absf = os.path.join(root, f)
                 relf = os.path.relpath(absf, folder).replace("\\", "/")
+                print("Parsing %s                    " % relf, end="\r")
                 self.files[relf] = _ParsedFileData(load(absf))
 
 
@@ -25,7 +26,9 @@ class _ParsedFileData:
         for node in ast.walk(rootnode):
             start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
             if start is not None:
-                self.scopes[start] = max(end, self.scopes.get(start, 0))
+                end = max(end, self.scopes.get(start, 0))
+                if start < end:
+                    self.scopes[start] = int(end)
 
         self.imports = self._parse_imports(rootnode)
         self.imports_usages = self._parse_usages(rootnode, self.imports)
@@ -80,13 +83,13 @@ class _ParsedFileData:
     def _parse_usages(rootnode, defs):
 
         class MyVisitor(ast.NodeVisitor):
-            names = {}
-
-            def generic_visit(self, node):
-                ast.NodeVisitor.generic_visit(self, node)
+            def __init__(self):
+                self.names = {}  # Safe, instance-specific state
 
             def visit_Name(self, node):
                 self.names.setdefault(node.id, set()).add(node.lineno)
+                # No need to keep recursing!
+                # self.generic_visit(node)
 
         visitor = MyVisitor()
         visitor.visit(rootnode)

@@ -68,3 +68,31 @@ def test_parse_globals_defs_non_name_assign_target():
     assert "x" in parsed.global_definitions
     assert "a" in parsed.global_definitions
     assert "b" in parsed.global_definitions
+
+
+def test_python_parsed_scopes():
+    src = textwrap.dedent("""\
+        def myfunc():
+            a = 3
+            b = 2
+            # some comment
+            c = 1
+            if a == 3:
+                b = 4
+                # comment
+                if b == 8:
+                    pass # other scope
+                c = 5
+
+            c = 5
+
+        def otherfunc():
+            pass
+        """)
+    parsed = _ParsedFileData(src)
+    print(parsed.scopes)
+    result = []
+    read_lines = src.splitlines()
+    for line, tests in sorted(parsed.scopes.items()):
+        result.append(f"   {line:<2}: {read_lines[line - 1][:49]:<50} -> {tests}")
+    print("\n".join(result))

@@ -12,8 +12,8 @@ class CovTestData:
         # the relation between the files in the project that have been opened
         # and the tests that cover/use them
         self.data_files = data_files or {}  # filepath: set(tests)
-        self.py_files = py_files or {}
-        self.scopes = scopes or {}
+        self.py_files = py_files or {}  # Actual python files
+        self.scopes = scopes or {}  # {filepath: {line: lines of scope}}
 
     def summary(self):
         result = [f"Data files: {len(self.data_files)}",

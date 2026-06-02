@@ -103,7 +103,6 @@ def test_contexts(case):
     pass
 
 
-@pytest.mark.xfail(reason="Not imlpemented yet")
 @pytest.mark.parametrize("case", collect_cases("insert_scope"), ids=os.path.basename)
 def test_insert_scope(prepare_case, case):
     """Inserted lines pick tests via same-indentation heuristic, not the whole enclosing scope."""

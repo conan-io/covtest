@@ -195,7 +195,7 @@ def covtest_postprocess(folder, covtest_file=None):
 
     out_info("parsing source files ...")
     t = time.time()
-    parse_results = ParsedData(folder)
+    parse_results = ParsedData(folder, cov_data.keys())
     out_info(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
 
     opened_files = os.path.join(folder, ".covtest", "file_open")

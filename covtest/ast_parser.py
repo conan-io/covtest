@@ -5,16 +5,14 @@ from covtest.util.files import load
 
 
 class ParsedData:
-    def __init__(self, folder):
+    def __init__(self, folder, py_files):
+        """Parse only the .py files listed in *py_files* (relative paths, forward-slash
+        separated), which are the files that appear in the coverage data."""
         self.files = {}
-        for root, dirs, files in os.walk(folder):
-            for f in files:
-                if not f.endswith(".py"):
-                    continue
-                absf = os.path.join(root, f)
-                relf = os.path.relpath(absf, folder).replace("\\", "/")
-                print("Parsing %s                    " % relf, end="\r")
-                self.files[relf] = _ParsedFileData(load(absf))
+        for relf in py_files:
+            absf = os.path.join(folder, relf.replace("/", os.sep))
+            print("Parsing %s                    " % relf, end="\r")
+            self.files[relf] = _ParsedFileData(load(absf))
 
 
 class _ParsedFileData:

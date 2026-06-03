@@ -162,7 +162,7 @@ def cmd_config(folder, config_command):
         return 0
 
 
-def cmd_debug(folder, debug_command, pattern):
+def cmd_debug(folder, debug_command, pattern, test_pattern=None):
     if debug_command == "source":
         import fnmatch
         from covtest.covtest_data import CovTestData
@@ -204,20 +204,30 @@ def cmd_debug(folder, debug_command, pattern):
             width = len(str(n_lines))
             header = f"{filepath}  ({n_covered} lines with test coverage)"
             print(f"\n{header}")
-            print("─" * len(header))
+            print("-" * len(header))
+
+            def _filter_tests(tests):
+                if not tests or test_pattern is None:
+                    return tests
+                return {t for t in tests if fnmatch.fnmatch(t, test_pattern)}
 
             if source_lines:
                 for lineno, src_line in enumerate(source_lines, 1):
-                    tests = line_data.get(lineno)
-                    print(f"  {lineno:{width}} │ {src_line}")
+                    tests = _filter_tests(line_data.get(lineno))
+                    if test_pattern and not tests:
+                        continue
+                    print(f"  {lineno:{width}} | {src_line}")
                     if tests:
                         for t in sorted(tests):
-                            print(f"  {' ' * width} │   ↳ {t}")
+                            print(f"  {' ' * width} |   -> {t}")
             else:
                 print(f"  (source not found at {src_path} — snapshot data only)")
                 for lineno, tests in sorted(line_data.items()):
-                    print(f"  {lineno:{width}} │ <line {lineno}>")
+                    tests = _filter_tests(tests)
+                    if test_pattern and not tests:
+                        continue
+                    print(f"  {lineno:{width}} | <line {lineno}>")
                     for t in sorted(tests):
-                        print(f"  {' ' * width} │   ↳ {t}")
+                        print(f"  {' ' * width} |   -> {t}")
 
         return 0

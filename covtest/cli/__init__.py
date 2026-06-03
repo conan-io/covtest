@@ -159,6 +159,13 @@ def _parse_args(argv):
         type=Path,
         help="Project directory (defaults to current directory)",
     )
+    p_debug_source.add_argument(
+        "--test",
+        default=None,
+        metavar="PATTERN",
+        dest="test_pattern",
+        help="Only show tests whose node ID matches this fnmatch pattern, e.g. '*test_foo*'",
+    )
     _add_verbosity_args(p_debug, add_defaults=False)
     _add_verbosity_args(p_debug_source, add_defaults=False)
 

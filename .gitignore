@@ -3,3 +3,6 @@ __pycache__
 covtest.egg-info
 .pytest_cache
 .claude
+benchmarks
+build
+

@@ -9,7 +9,7 @@ import pytest
 
 from covtest.covtest import COVTEST_FOLDER
 
-SYMPY_TAG = "sympy-1.13.0"
+SYMPY_TAG = "1.14.0"
 SYMPY_REPO_URL = "https://github.com/sympy/sympy"
 COVTEST_ROOT = Path(__file__).parent.parent.parent
 
@@ -20,7 +20,7 @@ BREAKING_CHANGES = [
     {
         "id": "integer_add_invert",
         "file": "sympy/core/numbers.py",
-        "line": 1862,
+        "line": 1891,
         "original": "                return Integer(self.p + other.p)\n",
         "replacement": "                kk\n",
         "description": "Invert Integer.__add__ for Integer + Integer case",
@@ -28,7 +28,7 @@ BREAKING_CHANGES = [
     {
         "id": "rational_add_invert",
         "file": "sympy/core/numbers.py",
-        "line": 1426,
+        "line": 1457,
         "original": "                return Rational(self.p*other.q + self.q*other.p, self.q*other.q)\n",
         "replacement": "                kk\n",
         "description": "Invert Rational.__add__ cross-multiplication",
@@ -36,7 +36,7 @@ BREAKING_CHANGES = [
     {
         "id": "symbol_free_symbols_break",
         "file": "sympy/core/symbol.py",
-        "line": 434,
+        "line": 448,
         "original": "        return {self}\n",
         "replacement": "        return kk\n",
         "description": "Break Symbol.free_symbols to return empty set",

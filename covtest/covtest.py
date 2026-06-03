@@ -43,18 +43,6 @@ def _is_config_file(filepath):
     return any(fnmatch.fnmatch(name, pat) for pat in _CONFIG_FILE_PATTERNS)
 
 
-def str_nested_dict(files):
-    result = []
-    for f, contexts in files.items():
-        result.append(f)
-        read_lines = load(f).splitlines()
-        if not read_lines:  # Completely empty file
-            continue
-        for line, tests in sorted(contexts.items()):
-            result.append(f"   {line:<2}: {read_lines[line-1][:49]:<50} -> {tests}")
-    return "\n".join(result)
-
-
 def extract_coverage(folder):
     """ Parse the .coverage DB to get the info we want
     which is a dict {file: {line: [pytest cov context]}}
@@ -190,7 +178,6 @@ def covtest_postprocess(folder, covtest_file=None):
     out_info("extracting coverage data from .coverage DB")
     t = time.time()
     cov_data = extract_coverage(folder)
-    out_verbose(f"Coverage results:\n{str_nested_dict(cov_data)}")
     out_info(f"extract coverage : {time.time() - t:5.1f}s  ({len(cov_data)} files)")
 
     out_info("parsing source files ...")
@@ -212,7 +199,6 @@ def covtest_postprocess(folder, covtest_file=None):
     t = time.time()
     # TODO: incremental update of covtestdata
     cov_test_data = CovTestData.create(cov_data, parse_results, opened_files)
-    out_verbose(f"Coverage after applied mappings\n{str_nested_dict(cov_test_data.py_files)}")
     out_info(f"build mappings   : {time.time() - t:5.1f}s")
     out_info(f"Coverage covtest summary:\n{cov_test_data.summary()}")
 

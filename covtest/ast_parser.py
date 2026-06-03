@@ -11,7 +11,6 @@ class ParsedData:
         self.files = {}
         for relf in py_files:
             absf = os.path.join(folder, relf.replace("/", os.sep))
-            print("Parsing %s                    " % relf, end="\r")
             self.files[relf] = _ParsedFileData(load(absf))
 
 
@@ -21,17 +20,22 @@ class _ParsedFileData:
     def __init__(self, code):
         rootnode = ast.parse(code)
         self.scopes = {}  # Mapping from line to the end line of the current scope (class, function)
+
+        usage_names = {}
+
         for node in ast.walk(rootnode):
             start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
             if start is not None:
                 end = max(end, self.scopes.get(start, 0))
                 if start < end:
                     self.scopes[start] = int(end)
+            if isinstance(node, ast.Name):
+                usage_names.setdefault(node.id, set()).add(node.lineno)
 
         self.imports = self._parse_imports(rootnode)
-        self.imports_usages = self._parse_usages(rootnode, self.imports)
+        self.imports_usages = self._parse_usages(usage_names, self.imports)
         self.global_definitions = self._parse_globals_defs(rootnode)
-        self.global_usages = self._parse_usages(rootnode, self.global_definitions)
+        self.global_usages = self._parse_usages(usage_names, self.global_definitions)
 
     @staticmethod
     def _parse_globals_defs(rootnode):
@@ -78,21 +82,7 @@ class _ParsedFileData:
         return result
 
     @staticmethod
-    def _parse_usages(rootnode, defs):
-
-        class MyVisitor(ast.NodeVisitor):
-            def __init__(self):
-                self.names = {}  # Safe, instance-specific state
-
-            def visit_Name(self, node):
-                self.names.setdefault(node.id, set()).add(node.lineno)
-                # No need to keep recursing!
-                # self.generic_visit(node)
-
-        visitor = MyVisitor()
-        visitor.visit(rootnode)
-        usage_names = visitor.names
-
+    def _parse_usages(usage_names, defs):
         result = {}
         for name, lines in defs.items():
             existing = usage_names.get(name)

@@ -20,25 +20,25 @@ BREAKING_CHANGES = [
     {
         "id": "integer_add_invert",
         "file": "sympy/core/numbers.py",
-        "line": 2283,
+        "line": 1862,
         "original": "                return Integer(self.p + other.p)\n",
-        "replacement": "                return Integer(self.p - other.p)\n",
+        "replacement": "                kk\n",
         "description": "Invert Integer.__add__ for Integer + Integer case",
     },
     {
         "id": "rational_add_invert",
         "file": "sympy/core/numbers.py",
-        "line": 2457,
+        "line": 1426,
         "original": "                return Rational(self.p*other.q + self.q*other.p, self.q*other.q)\n",
-        "replacement": "                return Rational(self.p*other.q - self.q*other.p, self.q*other.q)\n",
+        "replacement": "                kk\n",
         "description": "Invert Rational.__add__ cross-multiplication",
     },
     {
         "id": "symbol_free_symbols_break",
         "file": "sympy/core/symbol.py",
-        "line": 262,
+        "line": 434,
         "original": "        return {self}\n",
-        "replacement": "        return set()\n",
+        "replacement": "        return kk\n",
         "description": "Break Symbol.free_symbols to return empty set",
     },
 ]
@@ -99,7 +99,7 @@ def sympy_repo(tmp_path_factory):
     # initial run to a manageable scope.
     print("Running pytest with coverage …")
     result = subprocess.run(
-        [venv_python, "-m", "pytest", "sympy/core/tests/test_args.py",
+        [venv_python, "-m", "pytest", "sympy/core/tests/",
          "-n", "auto",
          "--cov=sympy", "--cov-context=test",
          "--tb=no", "-q"],

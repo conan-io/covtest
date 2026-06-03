@@ -70,6 +70,24 @@ def test_parse_globals_defs_non_name_assign_target():
     assert "b" in parsed.global_definitions
 
 
+def test_parse_imports_local():
+    """Imports inside a function body must appear in both imports and import_sources."""
+    src = textwrap.dedent("""\
+        def test_foo():
+            from mypackage.mymodule import MyClass
+            assert MyClass()
+
+        def test_bar():
+            import another.module
+            another.module.do_something()
+        """)
+    parsed = _ParsedFileData(src)
+    # imports: the imported *name*
+    assert parsed.imports == {'MyClass': [2], 'another.module': [6]}
+    # import_sources: the *source module path*
+    assert parsed.import_sources == {'mypackage.mymodule': [2], 'another.module': [6]}
+
+
 def test_python_parsed_scopes():
     src = textwrap.dedent("""\
         def myfunc():

@@ -32,7 +32,7 @@ class _ParsedFileData:
             if isinstance(node, ast.Name):
                 usage_names.setdefault(node.id, set()).add(node.lineno)
 
-        self.imports = self._parse_imports(rootnode)
+        self.imports, self.import_sources = self._parse_imports(rootnode)
         self.imports_usages = self._parse_usages(usage_names, self.imports)
         self.global_definitions = self._parse_globals_defs(rootnode)
         self.global_usages = self._parse_usages(usage_names, self.global_definitions)
@@ -72,14 +72,29 @@ class _ParsedFileData:
 
     @staticmethod
     def _parse_imports(rootnode):
-        # TODO: Check what happens with nested imports and try-except imports
-        result = {}
-        for child in ast.iter_child_nodes(rootnode):
-            if isinstance(child, (ast.Import, ast.ImportFrom)):
-                for alias in child.names:
-                    for line in range(child.lineno, child.end_lineno+1):
-                        result.setdefault(alias.name, []).append(line)
-        return result
+        """Return (imports, import_sources).
+
+        imports:        {imported_name: [lines]}   e.g. "FockSpace" → [5]
+        import_sources: {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
+
+        Both module-level and function-body imports are captured (ast.walk).
+        """
+        imports = {}
+        import_sources = {}
+        for node in ast.walk(rootnode):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                for alias in node.names:
+                    for line in range(node.lineno, node.end_lineno + 1):
+                        imports.setdefault(alias.name, []).append(line)
+                        if module:
+                            import_sources.setdefault(module, []).append(line)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    for line in range(node.lineno, node.end_lineno + 1):
+                        imports.setdefault(alias.name, []).append(line)
+                        import_sources.setdefault(alias.name, []).append(line)
+        return imports, import_sources
 
     @staticmethod
     def _parse_usages(usage_names, defs):

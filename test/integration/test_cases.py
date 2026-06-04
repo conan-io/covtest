@@ -110,6 +110,15 @@ def test_insert_scope(prepare_case, case):
     change_and_predict(case, case_folder, base_commit)
 
 
+@pytest.mark.parametrize("case", collect_cases("local_imports"), ids=os.path.basename)
+def test_local_imports(prepare_case, case):
+    """A test with a local (function-body) import must be predicted when the imported
+    module changes at a line that is never directly called — only reachable via
+    import-time tracing, not direct line coverage."""
+    case_folder, base_commit = prepare_case("local_imports")
+    change_and_predict(case, case_folder, base_commit)
+
+
 @pytest.mark.parametrize("case", collect_cases("pyfiles"), ids=os.path.basename)
 def test_pyfiles(prepare_case, case):
     """Modifying a project configuration file must cause predict_tests to return

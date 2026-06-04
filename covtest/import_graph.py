@@ -80,8 +80,17 @@ def _trace_module(dotpath, folder, closure_cache):
     if dotpath in closure_cache:
         return
 
-    # --- snapshot sys.modules so we can restore it afterwards -----------------
+    # --- snapshot sys.modules so we can fully restore it afterwards -----------
     modules_snapshot = dict(sys.modules)
+
+    # Remove the target module and all its subpackages so importlib actually
+    # executes the module code instead of returning the cached object.
+    # This is necessary because covtest_postprocess runs after all tests, so
+    # every project module is already cached in sys.modules.
+    prefix = dotpath + "."
+    evicted = {key for key in sys.modules if key == dotpath or key.startswith(prefix)}
+    for key in evicted:
+        del sys.modules[key]
 
     executed = defaultdict(set)  # abs_filename → {linenos}
 
@@ -112,8 +121,12 @@ def _trace_module(dotpath, folder, closure_cache):
 
     closure_cache[dotpath] = result
 
-    # --- restore sys.modules --------------------------------------------------
-    # Remove modules that were newly imported so the next trace starts fresh.
+    # --- restore sys.modules to its original state ----------------------------
+    # 1. Remove modules introduced by the fresh import.
     for key in list(sys.modules):
         if key not in modules_snapshot:
             del sys.modules[key]
+    # 2. Reinstate modules that were evicted before the trace.
+    for key in evicted:
+        if key in modules_snapshot:
+            sys.modules[key] = modules_snapshot[key]

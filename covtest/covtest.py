@@ -119,14 +119,21 @@ def suite_to_run(covdata, diff_result, folder):
         # class), in which case the insertion sits between two scopes and we fall
         # back to a backward scope search from old_pos.
         if inserted_lines:
+            print("Handling inserted lines", inserted_lines)
+            for k, v in m.items():
+                print(f"{k}: {v}")
             scope = scopes.get(filename)
             if scope is not None:
+                print("Scope for ", filename, "is", scope)
                 for old_pos in sorted(inserted_lines):
+                    print("Checking inserted line", old_pos)
                     next_line = old_pos + 1
                     if scope.get(next_line) is None:
+                        print("Next line is not scope start")
                         # next_line is not a scope start — the insertion is inside
                         # an existing scope; use the direct coverage lookup.
                         tests = m.get(next_line, ())
+                        print("Adding its tests", tests)
                         result.update(t for t in tests if t)
                     else:
                         # next_line starts a new scope; insertion is between two
@@ -185,6 +192,17 @@ def covtest_postprocess(folder, covtest_file=None):
     parse_results = ParsedData(folder, cov_data.keys())
     out_info(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
 
+    out_info("tracing import-time lines ...")
+    t = time.time()
+    from covtest.import_graph import build_import_graph
+    test_import_sources = {
+        f: list(parse_results.files[f].import_sources.keys())
+        for f in cov_data
+        if "test" in os.path.basename(f) and f in parse_results.files
+    }
+    import_time_lines = build_import_graph(folder, test_import_sources)
+    out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
+
     opened_files = os.path.join(folder, ".covtest", "file_open")
     out_info("processing opened files")
     if os.path.exists(opened_files):
@@ -198,7 +216,7 @@ def covtest_postprocess(folder, covtest_file=None):
     out_info("building coverage mappings ...")
     t = time.time()
     # TODO: incremental update of covtestdata
-    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files)
+    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files, import_time_lines)
     out_info(f"build mappings   : {time.time() - t:5.1f}s")
     out_info(f"Coverage covtest summary:\n{cov_test_data.summary()}")
 

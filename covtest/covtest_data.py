@@ -28,10 +28,10 @@ class CovTestData:
         return "\n".join(result)
 
     @staticmethod
-    def create(coverage_data, parse_data, opened_files):
+    def create(coverage_data, parse_data, opened_files, import_time_lines):
         result = CovTestData()
         result.py_files = coverage_data
-        result._extend_mappings(parse_data)
+        result._extend_mappings(parse_data, import_time_lines)
         result.scopes = {f: {line: lines for line, lines in scope_data.scopes.items()}
                          for f, scope_data in parse_data.files.items()}
 
@@ -40,13 +40,27 @@ class CovTestData:
             result.data_files.setdefault(file.replace("\\", "/"), []).append(test)
         return result
 
-    def _extend_mappings(self, parse_data):
-        # First pass, complete
+    def _extend_mappings(self, parse_data, import_time_lines):
+        # Snapshot raw coverage so the import-time projection uses unenriched data.
+        # IMPORTANT: we must read test attribution from the RAW coverage data,
+        # not from the enriched py_files.  The existing first pass propagates tests
+        # from usage sites back to import declaration lines (e.g. both test_add and
+        # test_mult end up on a shared `from mymath import add, mult` line).  Using
+        # that enriched data would cause the projection to spread both tests onto
+        # all import-time lines of mymath, producing false positives.  The raw data
+        # only has a test on an import line when the test DIRECTLY executed it —
+        # which is exactly what we want (function-body / local imports).
+        # Snapshot raw coverage before passes 1 & 2 mutated it.
+        # Values are shallow-copied sets so later mutations don't bleed in.
+        raw_py_files = {
+            f: {line: set(tests) for line, tests in td.items()}
+            for f, td in self.py_files.items()
+        }
 
         def _extend_global_usages(test_data_, parsed_file_data_):
-            for name, lines in parsed_file_data_.global_usages.items():
+            for name, lines_ in parsed_file_data_.global_usages.items():
                 tests_from_usages = set()
-                for lin_ in lines:
+                for lin_ in lines_:
                     try:
                         tests_from_usages.update(test_data[lin_])
                     except KeyError:
@@ -113,6 +127,41 @@ class CovTestData:
         for file, test_data in self.py_files.items():
             parsed_file_data = parse_data.files[file]
             _extend_global_usages(test_data, parsed_file_data)
+
+        # Third pass: import-time line projection.
+        # For each import statement that has test coverage (the import line was
+        # executed during a test — true for function-body / local imports), project
+        # those tests onto every line that runs when the imported module is loaded.
+        # This handles transitive chains through __init__.py re-exports and
+        # import-time function calls that static AST analysis cannot see.
+        new_data = {}  # target_file → {line → set(tests)} accumulated before merging
+        for file, raw_test_data in raw_py_files.items():
+            parsed_file_data = parse_data.files.get(file)
+            if parsed_file_data is None:
+                continue
+            for dotpath, decl_lines in parsed_file_data.import_sources.items():
+                # Collect tests that annotated the import declaration line(s)
+                # in the RAW (unenriched) coverage data.
+                import_tests = set()
+                for decl_line in decl_lines:
+                    lin_tests = raw_test_data.get(decl_line)
+                    if lin_tests:
+                        import_tests.update(lin_tests)
+                if not import_tests:
+                    continue  # import line not directly covered → skip
+
+                # Project to every line executed when importing this dotpath
+                for target_file, lines in import_time_lines.get(dotpath, {}).items():
+                    target_file_data = new_data.setdefault(target_file, {})
+                    for line in lines:
+                        target_file_data.setdefault(line, set()).update(import_tests)
+
+        # Merge accumulated data into py_files (done outside the loop to
+        # avoid mutating the dict while iterating over it)
+        for target_file, file_data in new_data.items():
+            existing = self.py_files.setdefault(target_file, {})
+            for line, tests in file_data.items():
+                existing.setdefault(line, set()).update(tests)
 
     def save(self, filepath):
         all_tests = set()

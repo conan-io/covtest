@@ -119,6 +119,26 @@ def test_local_imports(prepare_case, case):
     change_and_predict(case, case_folder, base_commit)
 
 
+@pytest.mark.parametrize("case", collect_cases("ancestor_chain"), ids=os.path.basename)
+def test_ancestor_chain(prepare_case, case):
+    """A test that imports a deep leaf module (mypkg.quantum.state) must be predicted
+    when a function called by the top-level package __init__.py (mypkg.util.compute)
+    is mutated — even though state.py has no import from mypkg and the mypkg lines
+    carry no direct test attribution (covered at collection time via module-level import).
+
+    This requires all three ancestor-chain fixes:
+      Fix 1 (covtest.py):      ancestor 'mypkg' is added to all_import_sources
+                                because the test's local import has test context.
+      Fix 2 (import_graph.py): 'mypkg.*' subtree is fully evicted during tracing so
+                                mypkg/__init__.py re-runs compute() and util.py:2 is
+                                captured in closure_cache['mypkg'].
+      Fix 3 (covtest_data.py): projection for 'mypkg.quantum.state' iterates the
+                                ancestor chain and applies closure_cache['mypkg'],
+                                attributing util.py:2 to test_state."""
+    case_folder, base_commit = prepare_case("ancestor_chain")
+    change_and_predict(case, case_folder, base_commit)
+
+
 @pytest.mark.parametrize("case", collect_cases("transitive_init"), ids=os.path.basename)
 def test_transitive_init(prepare_case, case):
     """A test with a local import of a leaf module must be predicted when a utility

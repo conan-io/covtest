@@ -114,7 +114,7 @@ def _trace_module(dotpath, folder, closure_cache):
     # module-level code such as `RESULT = Helper().compute(1, 2)`.
     # A hard cap prevents catastrophic eviction for very large packages (e.g.
     # the top-level `sympy` package with 500+ submodules).
-    _MAX_SUBTREE = 50
+    _MAX_SUBTREE = 200  # handles sympy.physics.* (~100 modules); blocks sympy.* (~500+)
     prefix = dotpath + "."
     submodules = {key for key in sys.modules if key.startswith(prefix)}
     if len(submodules) <= _MAX_SUBTREE:

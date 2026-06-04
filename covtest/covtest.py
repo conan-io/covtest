@@ -199,6 +199,7 @@ def covtest_postprocess(folder, covtest_file=None):
     # trigger the projection needs.  Only add a dotpath if at least one of its
     # declaration lines has direct test attribution — dotpaths whose lines are
     # only covered at collection time (empty test set) produce no projection.
+    from covtest.import_graph import _is_project_dotpath as _is_proj
     all_import_sources = {}
     for f in cov_data:
         if f not in parse_results.files:
@@ -207,6 +208,14 @@ def covtest_postprocess(folder, covtest_file=None):
         for dotpath, decl_lines in parse_results.files[f].import_sources.items():
             if any(file_cov.get(l) for l in decl_lines):
                 all_import_sources.setdefault(f, []).append(dotpath)
+                # Also include every ancestor package so that the transitive
+                # import chain (e.g. physics/__init__ → units → si.py) gets
+                # traced even when only a deep leaf is imported directly.
+                parts = dotpath.split(".")
+                for i in range(1, len(parts)):
+                    ancestor = ".".join(parts[:i])
+                    if _is_proj(ancestor, folder):
+                        all_import_sources.setdefault(f, []).append(ancestor)
     import_time_lines = build_import_graph(folder, all_import_sources)
     out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
 

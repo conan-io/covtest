@@ -150,11 +150,19 @@ class CovTestData:
                 if not import_tests:
                     continue  # import line not directly covered → skip
 
-                # Project to every line executed when importing this dotpath
-                for target_file, lines in import_time_lines.get(dotpath, {}).items():
-                    target_file_data = new_data.setdefault(target_file, {})
-                    for line in lines:
-                        target_file_data.setdefault(line, set()).update(import_tests)
+                # Project to every line executed when importing this dotpath,
+                # AND every ancestor package in the dotpath chain.
+                # e.g. for "sympy.physics.quantum.state", also include the
+                # import-time lines of "sympy.physics.quantum", "sympy.physics",
+                # and "sympy", because importing the leaf for the first time
+                # triggers all of those __init__.py files transitively.
+                parts = dotpath.split(".")
+                for depth in range(1, len(parts) + 1):
+                    ancestor = ".".join(parts[:depth])
+                    for target_file, lines in import_time_lines.get(ancestor, {}).items():
+                        target_file_data = new_data.setdefault(target_file, {})
+                        for line in lines:
+                            target_file_data.setdefault(line, set()).update(import_tests)
 
         # Merge accumulated data into py_files (done outside the loop to
         # avoid mutating the dict while iterating over it)

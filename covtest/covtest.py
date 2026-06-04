@@ -194,12 +194,20 @@ def covtest_postprocess(folder, covtest_file=None):
     out_info("tracing import-time lines ...")
     t = time.time()
     from covtest.import_graph import build_import_graph
-    test_import_sources = {
-        f: list(parse_results.files[f].import_sources.keys())
-        for f in cov_data
-        if "test" in os.path.basename(f) and f in parse_results.files
-    }
-    import_time_lines = build_import_graph(folder, test_import_sources)
+    # Include ALL project files (not just test files): source files like leaf.py
+    # may import a package with a test-attributed line, which is exactly the
+    # trigger the projection needs.  Only add a dotpath if at least one of its
+    # declaration lines has direct test attribution — dotpaths whose lines are
+    # only covered at collection time (empty test set) produce no projection.
+    all_import_sources = {}
+    for f in cov_data:
+        if f not in parse_results.files:
+            continue
+        file_cov = cov_data[f]
+        for dotpath, decl_lines in parse_results.files[f].import_sources.items():
+            if any(file_cov.get(l) for l in decl_lines):
+                all_import_sources.setdefault(f, []).append(dotpath)
+    import_time_lines = build_import_graph(folder, all_import_sources)
     out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
 
     opened_files = os.path.join(folder, ".covtest", "file_open")

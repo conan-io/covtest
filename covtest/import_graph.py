@@ -108,8 +108,25 @@ def _trace_module(dotpath, folder, closure_cache):
         closure_cache[dotpath] = {}
         return
 
-    # --- evict ONLY the target module (not its subtree) -----------------------
-    evicted_module = sys.modules.pop(dotpath, None)
+    # --- decide eviction scope ------------------------------------------------
+    # For a package, we evict its loaded submodules too so that the package
+    # __init__.py actually re-imports them (fresh execution), capturing
+    # module-level code such as `RESULT = Helper().compute(1, 2)`.
+    # A hard cap prevents catastrophic eviction for very large packages (e.g.
+    # the top-level `sympy` package with 500+ submodules).
+    _MAX_SUBTREE = 50
+    prefix = dotpath + "."
+    submodules = {key for key in sys.modules if key.startswith(prefix)}
+    if len(submodules) <= _MAX_SUBTREE:
+        all_to_evict = {dotpath} | submodules
+    else:
+        all_to_evict = {dotpath}  # fall back to single eviction
+
+    evicted = {}
+    for key in all_to_evict:
+        module = sys.modules.pop(key, None)
+        if module is not None:
+            evicted[key] = module
 
     executed = defaultdict(set)  # abs_filename → {linenos}
 
@@ -140,8 +157,10 @@ def _trace_module(dotpath, folder, closure_cache):
 
     closure_cache[dotpath] = result
 
-    # --- restore sys.modules --------------------------------------------------
-    # Remove the freshly-imported module object and put the original back.
-    sys.modules.pop(dotpath, None)
-    if evicted_module is not None:
-        sys.modules[dotpath] = evicted_module
+    # --- restore sys.modules to its original state ----------------------------
+    # Remove everything in the dotpath.* range that was added during the trace,
+    # then reinstate all modules that were evicted before it.
+    for key in list(sys.modules):
+        if key == dotpath or key.startswith(prefix):
+            del sys.modules[key]
+    sys.modules.update(evicted)

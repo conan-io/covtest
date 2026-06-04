@@ -113,37 +113,36 @@ def suite_to_run(covdata, diff_result, folder):
 
         # Inserted lines: find covering tests using old-file coordinates.
         # inserted_lines is {old_pos: count} — lines were inserted after old_pos.
-        # Strategy: look up m.get(old_pos + 1) directly (the line that immediately
-        # follows the insertion in the old file).  That line shares the same
-        # scope as the new code UNLESS it starts a fresh scope (a new function or
-        # class), in which case the insertion sits between two scopes and we fall
-        # back to a backward scope search from old_pos.
+        #
+        # Algorithm:
+        #   1. Find all scopes that contain old_pos (start <= old_pos <= end).
+        #   2. Pick the innermost (smallest range).
+        #   3. Collect tests from every line in that scope except the opening line
+        #      (scope_start+1 .. scope_end).  Any test that exercised any part of
+        #      that scope could be affected by code inserted into it.
         if inserted_lines:
-            print("Handling inserted lines", inserted_lines)
-            for k, v in m.items():
-                print(f"{k}: {v}")
             scope = scopes.get(filename)
             if scope is not None:
-                print("Scope for ", filename, "is", scope)
                 for old_pos in sorted(inserted_lines):
-                    print("Checking inserted line", old_pos)
-                    next_line = old_pos + 1
-                    if scope.get(next_line) is None:
-                        print("Next line is not scope start")
-                        # next_line is not a scope start — the insertion is inside
-                        # an existing scope; use the direct coverage lookup.
-                        tests = m.get(next_line, ())
-                        print("Adding its tests", tests)
+                    # Scopes that strictly contain old_pos (end > old_pos) — this
+                    # excludes scopes that END at old_pos, which means the
+                    # insertion is exiting that scope, not inside it.
+                    containing = [
+                        (start, end)
+                        for start, end in scope.items()
+                        if start <= old_pos < end
+                    ]
+                    if not containing:
+                        continue
+                    # Innermost scope — smallest range
+                    inner_start, inner_end = min(containing,
+                                                  key=lambda s: s[1] - s[0])
+                    # Lines after the insertion point up to the scope end.
+                    # Tests covering those lines can actually reach the new code.
+                    for line in range(old_pos + 1, inner_end + 1):
+                        tests = m.get(line, ())
+                        out_verbose(f"      {filename}:{line} (inserted scope) => {tests}")
                         result.update(t for t in tests if t)
-                    else:
-                        # next_line starts a new scope; insertion is between two
-                        # scopes — fall back to backward search from old_pos.
-                        for s in range(old_pos, 0, -1):
-                            max_line = scope.get(s)
-                            if max_line is not None and s < old_pos <= max_line:
-                                tests = m.get(s, ())
-                                result.update(t for t in tests if t)
-                                break
 
         # New tests in test files that didn't exist in the snapshot
         # TODO: Better filtering of test files, in case some production code is named "test"

@@ -119,6 +119,23 @@ def test_local_imports(prepare_case, case):
     change_and_predict(case, case_folder, base_commit)
 
 
+@pytest.mark.parametrize("case", collect_cases("transitive_init"), ids=os.path.basename)
+def test_transitive_init(prepare_case, case):
+    """A test with a local import of a leaf module must be predicted when a utility
+    function called by the parent package's __init__.py (at import time) is mutated.
+
+    This exercises the transitive-init chain:
+        test imports mypkg.leaf
+        → mypkg/__init__.py calls compute() at import time
+        → compute() lives in mypkg/util.py  ← mutation target
+
+    The current import tracer only evicts the single target dotpath (mypkg.leaf),
+    so it misses the __init__.py → util.py chain.  This test documents that gap
+    and will pass once the tracer is extended to follow parent-package chains."""
+    case_folder, base_commit = prepare_case("transitive_init")
+    change_and_predict(case, case_folder, base_commit)
+
+
 @pytest.mark.parametrize("case", collect_cases("pyfiles"), ids=os.path.basename)
 def test_pyfiles(prepare_case, case):
     """Modifying a project configuration file must cause predict_tests to return

@@ -71,26 +71,45 @@ def build_import_graph(folder, import_sources_by_file):
     return closure_cache
 
 
+def _is_project_dotpath(dotpath, folder):
+    """Return True if *dotpath* plausibly maps to a source file under *folder*.
+
+    This pre-filter skips stdlib / site-packages dotpaths before we even touch
+    sys.modules, avoiding both the eviction cost and the settrace overhead.
+    """
+    parts = dotpath.replace(".", os.sep)
+    return (os.path.isfile(os.path.join(folder, parts + ".py")) or
+            os.path.isfile(os.path.join(folder, parts, "__init__.py")))
+
+
 def _trace_module(dotpath, folder, closure_cache):
     """Trace one module import and cache the result.
 
     If *dotpath* is already in *closure_cache* this is a no-op.
     On return, ``closure_cache[dotpath]`` is set (possibly to ``{}`` on failure).
+
+    Memory and performance design
+    -----------------------------
+    * **Single-module eviction**: only ``dotpath`` itself is removed from
+      sys.modules, NOT its subtree.  Submodules remain cached, so their code
+      never re-executes during the trace.  covtest_postprocess runs after the
+      full test suite, so every project module is already in sys.modules; we
+      only need to re-execute the one file whose import-time lines we want.
+    * **No sys.modules copy**: we save only the one evicted module object (not
+      a full dict copy of thousands of entries), which keeps memory O(1) per
+      trace regardless of how large sys.modules has grown.
     """
     if dotpath in closure_cache:
         return
 
-    # --- snapshot sys.modules so we can fully restore it afterwards -----------
-    modules_snapshot = dict(sys.modules)
+    # Pre-filter: if dotpath has no corresponding source file under folder,
+    # it is a stdlib / site-packages module whose lines we can never project.
+    if not _is_project_dotpath(dotpath, folder):
+        closure_cache[dotpath] = {}
+        return
 
-    # Remove the target module and all its subpackages so importlib actually
-    # executes the module code instead of returning the cached object.
-    # This is necessary because covtest_postprocess runs after all tests, so
-    # every project module is already cached in sys.modules.
-    prefix = dotpath + "."
-    evicted = {key for key in sys.modules if key == dotpath or key.startswith(prefix)}
-    for key in evicted:
-        del sys.modules[key]
+    # --- evict ONLY the target module (not its subtree) -----------------------
+    evicted_module = sys.modules.pop(dotpath, None)
 
     executed = defaultdict(set)  # abs_filename → {linenos}
 
@@ -121,12 +140,8 @@ def _trace_module(dotpath, folder, closure_cache):
 
     closure_cache[dotpath] = result
 
-    # --- restore sys.modules to its original state ----------------------------
-    # 1. Remove modules introduced by the fresh import.
-    for key in list(sys.modules):
-        if key not in modules_snapshot:
-            del sys.modules[key]
-    # 2. Reinstate modules that were evicted before the trace.
-    for key in evicted:
-        if key in modules_snapshot:
-            sys.modules[key] = modules_snapshot[key]
+    # --- restore sys.modules --------------------------------------------------
+    # Remove the freshly-imported module object and put the original back.
+    sys.modules.pop(dotpath, None)
+    if evicted_module is not None:
+        sys.modules[dotpath] = evicted_module

@@ -1,0 +1,6 @@
+{
+  "tests": [
+    "test_mypkg.py::test_first",
+    "test_mypkg.py::test_leaf"
+  ]
+}

@@ -54,12 +54,15 @@ def do_code_changes(target, folder):
     """
     folder = os.path.realpath(os.path.join(os.path.dirname(__file__), "cases", folder))
 
-    # FIXME: Not nested folders
-    for f in os.listdir(folder):
-        if f == "test.json":
+    for entry in os.listdir(folder):
+        if entry == "test.json":
             continue
-        f = os.path.join(folder, str(f))
-        shutil.copy(f, target)
+        src = os.path.join(folder, entry)
+        dst = os.path.join(str(target), entry)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            shutil.copy(src, dst)
 
     tests_def = json.loads(load(os.path.join(folder, "test.json")))
     return set(tests_def["tests"])

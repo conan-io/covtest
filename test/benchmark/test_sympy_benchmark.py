@@ -16,30 +16,36 @@ COVTEST_ROOT = Path(__file__).parent.parent.parent
 # Breaking changes: each entry defines a single-line mutation.
 # The 'original' field is asserted before applying the change — any line-number
 # drift in a future SymPy version will surface as a clear AssertionError.
+# Breaking changes use LOGICAL mutations (return wrong value, no exception)
+# rather than crash mutations (NameError).  Rationale: crash mutations cascade
+# through pytest's collection phase, making every test in every file that imports
+# the chain fail — these are collateral failures, not real test-impact signals.
+# Logical mutations only break tests whose OBSERVED OUTPUT changes, which is
+# exactly what a test-impact prediction tool should target.
 BREAKING_CHANGES = [
     {
         "id": "integer_add_invert",
         "file": "sympy/core/numbers.py",
         "line": 1891,
         "original": "                return Integer(self.p + other.p)\n",
-        "replacement": "                kk\n",
-        "description": "Invert Integer.__add__ for Integer + Integer case",
+        "replacement": "                return Integer(self.p - other.p)\n",
+        "description": "Integer.__add__ returns p - other.p instead of p + other.p",
     },
     {
         "id": "rational_add_invert",
         "file": "sympy/core/numbers.py",
         "line": 1457,
         "original": "                return Rational(self.p*other.q + self.q*other.p, self.q*other.q)\n",
-        "replacement": "                kk\n",
-        "description": "Invert Rational.__add__ cross-multiplication",
+        "replacement": "                return Rational(self.p*other.q - self.q*other.p, self.q*other.q)\n",
+        "description": "Rational.__add__ uses subtraction instead of addition in numerator",
     },
     {
         "id": "symbol_free_symbols_break",
         "file": "sympy/core/symbol.py",
         "line": 448,
         "original": "        return {self}\n",
-        "replacement": "        return kk\n",
-        "description": "Break Symbol.free_symbols to return empty set",
+        "replacement": "        return set()\n",
+        "description": "Symbol.free_symbols returns empty set instead of {self}",
     },
 ]
 
@@ -86,7 +92,12 @@ def sympy_repo(tmp_path_factory):
     # pytest-cov is already a covtest dependency; the rest are for SymPy's suite.
     print("Installing SymPy …")
     _pip("-e", ".")
-    _pip("pytest-xdist", "hypothesis")
+    # pytest-timeout is critical with LOGICAL mutations: some sympy algorithms
+    # iterate based on intermediate results (e.g., `while expr.free_symbols`).
+    # When a mutation produces wrong values, those loops can run forever instead
+    # of failing cleanly.  --timeout per-test makes any such hang surface as a
+    # test failure within seconds.
+    _pip("pytest-xdist", "hypothesis", "pytest-timeout")
 
     # Locally git-ignore generated artifacts so git_dirty() stays False.
     # We write to .git/info/exclude rather than modifying any tracked file.
@@ -153,25 +164,41 @@ def _revert_change(repo_dir, change):
 
 
 def _get_broken_tests(repo_dir, venv_python):
-    """Run sympy/core/tests/ in parallel and return node IDs with failed/error outcome."""
+    """Run sympy/core/tests/ in parallel and return (failed_set, total_count).
+
+    total_count is the total number of tests pytest ran — used to compute the
+    selection ratio (what fraction of the suite covtest predicted).
+
+    Per-test --timeout protects against logical mutations that cause infinite
+    loops in sympy algorithms instead of clean failures.  The subprocess-level
+    timeout is a final safety net for pathological cases (collection hangs,
+    pytest-xdist worker deadlocks, …).
+    """
     report_file = os.path.join(repo_dir, ".report.json")
-    subprocess.run(
-        [venv_python, "-m", "pytest", "sympy/core/tests/",
-         "-n", "auto",
-         "--tb=no", "-q",
-         "--json-report", f"--json-report-file={report_file}"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        subprocess.run(
+            [venv_python, "-m", "pytest", "sympy/core/tests/",
+             "-n", "auto",
+             "--timeout=30", "--timeout-method=thread",
+             "--tb=no", "-q",
+             "--json-report", f"--json-report-file={report_file}"],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            timeout=20 * 60,  # 20-minute wall-clock cap
+        )
+    except subprocess.TimeoutExpired:
+        print("WARNING: pytest exceeded the 20-minute wall-clock cap and was killed.")
     if not os.path.exists(report_file):
-        return set()
+        return set(), 0
     with open(report_file) as f:
         report = json.load(f)
-    failed = {t["nodeid"] for t in report.get("tests", [])
+    tests = report.get("tests", [])
+    failed = {t["nodeid"] for t in tests
               if t["outcome"] in ("failed", "error")}
-    print("FAILED TESTS:", len(failed), failed)
-    return failed
+    total = len(tests)
+    print(f"FAILED TESTS: {len(failed)}/{total}")
+    return failed, total
 
 
 def _get_predicted_tests(repo_dir, venv_python):
@@ -204,7 +231,7 @@ def test_covtest_predicts_broken_tests(sympy_repo, change):
     try:
         _apply_change(repo_dir, change)
 
-        broken = _get_broken_tests(repo_dir, venv_python)
+        broken, total = _get_broken_tests(repo_dir, venv_python)
         predicted = _get_predicted_tests(repo_dir, venv_python)
 
         tp = predicted & broken
@@ -212,20 +239,32 @@ def test_covtest_predicts_broken_tests(sympy_repo, change):
         fp = predicted - broken
         recall = len(tp) / len(broken) if broken else 1.0
         precision = len(tp) / len(predicted) if predicted else 0.0
+        # Selection ratio: what fraction of the entire suite covtest selected.
+        # A perfect predictor selects a tiny subset (low selection) that still
+        # catches all real breakages (high recall).  A trivial "run everything"
+        # predictor scores recall=1.0 but selection=1.0 → no CI speedup.
+        selection = len(predicted) / total if total else 1.0
 
-        print(f"\n[{change['id']}] broken={len(broken)} predicted={len(predicted)} "
-              f"recall={recall:.2f} precision={precision:.2f}")
+        print(f"\n[{change['id']}] broken={len(broken)}/{total} predicted={len(predicted)} "
+              f"recall={recall:.3f} precision={precision:.3f} selection={selection:.3f}")
         print(f"  True positives:          {len(tp)}")
-        print(f"  FN (missed by covtest):  {len(fn)}: {fn}")
-        print(f"  FP (extra predictions):  {len(fp)}: {fp}")
+        print(f"  FN (missed by covtest):  {len(fn)}: {sorted(fn)[:20]}"
+              f"{' …' if len(fn) > 20 else ''}")
+        print(f"  FP (extra predictions):  {len(fp)}")
 
         assert broken, (
             f"No tests failed after applying '{change['id']}' — "
             f"check that line {change['line']} is correct"
         )
-        assert recall >= 0.9, (
-            f"Recall {recall:.2f} < 0.9 for '{change['id']}'\n"
-            f"  Tests broken but not predicted: {fn}"
+        assert recall >= 0.99, (
+            f"Recall {recall:.3f} < 0.99 for '{change['id']}'\n"
+            f"  Tests broken but not predicted: {sorted(fn)}"
+        )
+        # Soundness check: covtest must provide real CI speedup, not rubber-stamp
+        # the suite.  A 70% selection ceiling means covtest skipped at least 30%.
+        assert selection <= 0.70, (
+            f"Selection {selection:.3f} > 0.70 for '{change['id']}' — "
+            f"covtest selected too much of the suite to be useful"
         )
     finally:
         _revert_change(repo_dir, change)

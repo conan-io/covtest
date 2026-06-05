@@ -1,16 +1,16 @@
 """Shared infrastructure for covtest benchmark tests.
 
-Each benchmark (Conan, Sympy, …) clones a real project, runs the full test
-suite with coverage, processes the snapshot, then applies a series of mutations
-and checks that covtest's recall ≥ 99 % and selection ≤ 70 %.
+Each benchmark (Conan, Sympy, Django, …) clones a real project, runs the full
+test suite with coverage, processes the snapshot, then applies a series of
+mutations and checks that covtest's recall ≥ 99 % and selection ≤ 70 %.
 
 This module provides:
-  - setup_repo()       — clone + venv + install + coverage run + covtest process
-  - apply_change()     — apply one mutation to the repo
-  - revert_change()    — git checkout to undo the mutation
-  - get_broken_tests() — run the test suite under the mutation, return failures
+  - setup_repo()         — clone + venv + install + coverage run + covtest process
+  - apply_change()       — apply one mutation to the repo
+  - revert_change()      — git checkout to undo the mutation
+  - get_broken_tests()   — run the test suite under the mutation, return failures
   - get_predicted_tests() — run covtest predict, return predicted test IDs
-  - assert_benchmark() — compute metrics, print them, assert thresholds
+  - assert_benchmark()   — compute metrics, print them, assert thresholds
 """
 
 import json
@@ -33,8 +33,9 @@ def setup_repo(
     tag: str,
     url: str,
     pip_deps: list,
-    test_scope: str,
+    test_scope: "str | list[str]",
     cov_target: str,
+    setup_hook: "callable | None" = None,
 ) -> dict:
     """Clone *url* at *tag*, create a dedicated venv, run the initial coverage
     suite, and process the snapshot with covtest.
@@ -52,11 +53,16 @@ def setup_repo(
         Each entry is either a plain string (single argument, e.g.
         ``"pytest-xdist"``) or a tuple of strings (multiple arguments, e.g.
         ``("-r", "requirements.txt")`` or ``("-e", ".")``).
-    test_scope : str
-        Pytest collection path for the initial coverage run (e.g.
-        ``"test/unittests/"`` or ``"sympy/core/tests/"``).
+    test_scope : str | list[str]
+        Pytest collection path(s) for the initial coverage run.  Either a
+        single string (e.g. ``"test/unittests/"``) or a list of paths.
     cov_target : str
         ``--cov=`` argument (the importable package name, e.g. ``"conan"``).
+    setup_hook : callable | None
+        Optional ``(repo_dir: str, venv_python: str) -> None`` called once
+        after all pip installs but before the initial coverage run.  Use this
+        to write config files (e.g. ``pytest.ini``) that the target project
+        needs when invoked via plain ``pytest`` instead of its own test runner.
 
     Returns
     -------
@@ -94,15 +100,19 @@ def setup_repo(
     for dep in pip_deps:
         _pip(dep) if isinstance(dep, str) else _pip(*dep)
 
+    if setup_hook is not None:
+        setup_hook(repo_dir, venv_python)
+
     # Keep generated artefacts out of git so git_dirty() stays False.
     exclude_file = os.path.join(repo_dir, ".git", "info", "exclude")
     with open(exclude_file, "a") as f:
         f.write("\n.coverage\n.covtest\n.venv\ncovtests.tests\n.report.json\n")
 
     # Initial coverage run.
-    print(f"Running pytest with coverage over {test_scope!r} …")
+    scope_args = [test_scope] if isinstance(test_scope, str) else list(test_scope)
+    print(f"Running pytest with coverage over {scope_args} …")
     result = subprocess.run(
-        [venv_python, "-m", "pytest", test_scope,
+        [venv_python, "-m", "pytest", *scope_args,
          "-n", "auto",
          f"--cov={cov_target}", "--cov-context=test",
          "--tb=no", "-q"],
@@ -179,11 +189,11 @@ def revert_change(repo_dir: str, change: dict) -> None:
 def get_broken_tests(
     repo_dir: str,
     venv_python: str,
-    test_scope: str,
+    test_scope: "str | list[str]",
     *,
-    timeout_per_test: int | None = None,
-    wall_timeout: int | None = None,
-) -> tuple[set, int]:
+    timeout_per_test: "int | None" = None,
+    wall_timeout: "int | None" = None,
+) -> tuple:
     """Run the test suite under the mutation and return ``(failed_ids, total)``.
 
     Parameters
@@ -192,8 +202,8 @@ def get_broken_tests(
         Root of the cloned project.
     venv_python : str
         Path to the venv's Python executable.
-    test_scope : str
-        Pytest collection path (e.g. ``"test/unittests/"``).
+    test_scope : str | list[str]
+        Pytest collection path(s) (e.g. ``"test/unittests/"``).
     timeout_per_test : int | None
         Per-test timeout in seconds passed to ``pytest-timeout`` via
         ``--timeout``.  Pass ``None`` to skip (safe for projects whose
@@ -208,11 +218,10 @@ def get_broken_tests(
     tuple[set[str], int]
         ``(failed_node_ids, total_test_count)``
     """
-    from covtest.covtest import COVTEST_FOLDER  # noqa: F401 (import check)
-
+    scope_args = [test_scope] if isinstance(test_scope, str) else list(test_scope)
     report_file = os.path.join(repo_dir, ".report.json")
     cmd = [
-        venv_python, "-m", "pytest", test_scope,
+        venv_python, "-m", "pytest", *scope_args,
         "-n", "auto",
         "--tb=no", "-q",
         "--json-report", f"--json-report-file={report_file}",

@@ -5,15 +5,15 @@ import subprocess
 import time
 
 import coverage
-from unidiff import PatchSet
 
-from covtest.covtest_data import CovTestData, PartialData
+from covtest.covtest_data import CovTestData
 from covtest.ast_parser import ParsedData
 from covtest.diff import diff
 from covtest.errors import CovTestException
-from covtest.git import git_commits, git_diff, git_dirty
+from covtest.import_graph import get_all_sources_by_file, build_import_graph
+from covtest.util.git import git_commits, git_diff, git_dirty
 from covtest.output import out_verbose, out_info
-from covtest.util.files import load, chdir
+from covtest.util.files import load, chdir, save
 
 COVTEST_FOLDER = ".covtest"
 
@@ -31,16 +31,6 @@ _CONFIG_FILE_PATTERNS = (
     ".coveragerc",
     "conftest.py",
 )
-
-
-def _is_config_file(filepath):
-    """Return True when *filepath* is a project configuration file.
-
-    Modifications to these files can affect the test environment or test
-    collection in ways that are impossible to predict from coverage data alone.
-    """
-    name = os.path.basename(filepath)
-    return any(fnmatch.fnmatch(name, pat) for pat in _CONFIG_FILE_PATTERNS)
 
 
 def extract_coverage(folder):
@@ -171,7 +161,7 @@ def extract_tests(folder, filename):
     return file_tests[:idx]
 
 
-def covtest_postprocess(folder, covtest_file=None):
+def process(folder, covtest_file=None):
     """
     process the .coverage file and saves a .covtest
     it will keep the information already existing in .covtest
@@ -193,36 +183,7 @@ def covtest_postprocess(folder, covtest_file=None):
 
     out_info("tracing import-time lines ...")
     t = time.time()
-    from covtest.import_graph import build_import_graph
-    # Include ALL project files (not just test files): source files like leaf.py
-    # may import a package with a test-attributed line, which is exactly the
-    # trigger the projection needs.  Only add a dotpath if at least one of its
-    # declaration lines has direct test attribution — dotpaths whose lines are
-    # only covered at collection time (empty test set) produce no projection.
-    from covtest.import_graph import _is_project_dotpath as _is_proj
-    all_import_sources = {}
-    for f in cov_data:
-        if f not in parse_results.files:
-            continue
-        file_cov = cov_data[f]
-        # Use local_import_sources (function-body imports only) so that only tests
-        # which *directly execute* an import statement at run-time are projected
-        # onto the imported module's lines.  Module-level imports run at collection
-        # time and are often shared across many tests, leading to massive
-        # over-prediction when the transitive import chain is large (e.g. any
-        # Django test file that imports from django.db ends up attributing every
-        # test to django.utils.translation.trans_real).
-        for dotpath, decl_lines in parse_results.files[f].local_import_sources.items():
-            if any(file_cov.get(l) for l in decl_lines):
-                all_import_sources.setdefault(f, []).append(dotpath)
-                # Also include every ancestor package so that the transitive
-                # import chain (e.g. physics/__init__ → units → si.py) gets
-                # traced even when only a deep leaf is imported directly.
-                parts = dotpath.split(".")
-                for i in range(1, len(parts)):
-                    ancestor = ".".join(parts[:i])
-                    if _is_proj(ancestor, folder):
-                        all_import_sources.setdefault(f, []).append(ancestor)
+    all_import_sources = get_all_sources_by_file(cov_data, parse_results, folder)
     import_time_lines = build_import_graph(folder, all_import_sources)
     out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
 
@@ -260,24 +221,6 @@ def covtest_postprocess(folder, covtest_file=None):
     out_info(f"total            : {time.time() - t0:5.1f}s")
 
 
-_NOT_FOUND_CACHE_FILE = "server_not_found.json"
-
-
-def _load_not_found_cache(base_folder):
-    path = os.path.join(base_folder, _NOT_FOUND_CACHE_FILE)
-    if os.path.isfile(path):
-        with open(path) as f:
-            return json.load(f)
-    return {}
-
-
-def _save_not_found_cache(base_folder, cache):
-    path = os.path.join(base_folder, _NOT_FOUND_CACHE_FILE)
-    os.makedirs(base_folder, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(cache, f)
-
-
 def get_base_commit(project_folder, cfg):
     """ obtain the base commit to diff against, checking in the local cache
     and retrieving from server if necessary
@@ -292,7 +235,8 @@ def get_base_commit(project_folder, cfg):
     commits = git_commits(project_folder, max_commits)
 
     covtest_folder = project_folder / COVTEST_FOLDER
-    not_found = _load_not_found_cache(covtest_folder) if server_url else {}
+    not_found_path = os.path.join(covtest_folder, "server_not_found.json")
+    not_found = json.loads(load(not_found_path)) if server_url and os.path.isfile(not_found_path) else {}
     now = time.time()
 
     result = None
@@ -330,7 +274,7 @@ def get_base_commit(project_folder, cfg):
                  "was computed in CI")
     # prune the not_found cache to 100
     not_found = dict(list(not_found.items())[-100:])
-    _save_not_found_cache(covtest_folder, not_found)
+    save(not_found_path, json.dumps(not_found))
     return result
 
 
@@ -363,6 +307,10 @@ def predict_tests(project_folder, base_commit):
     )
     out_verbose(f"compute diff     : {time.time() - t:5.1f}s  ({len(diff_result)} files, {n_changed} lines changed)")
 
+    def _is_config_file(filepath):
+        name = os.path.basename(filepath)
+        return any(fnmatch.fnmatch(name, pat) for pat in _CONFIG_FILE_PATTERNS)
+
     config_files = [f for f in diff_result if _is_config_file(f)]
     if config_files:
         out_info(f"Pytest or project configuration files modified {config_files} — all tests must run")
@@ -376,178 +324,3 @@ def predict_tests(project_folder, base_commit):
     out_verbose(f"total            : {time.time() - t0:5.1f}s")
     return tests
 
-
-# ---------------------------------------------------------------------------
-# Incremental merge helpers
-# ---------------------------------------------------------------------------
-
-def _build_line_mapping(patched_file):
-    """Return (explicit, final_offset) for one file's diff.
-
-    explicit      — {source_lineno: target_lineno | None}  for every line
-                    covered by the diff hunks (context + removed + inter-hunk
-                    gaps).  None means the source line was truly deleted (no
-                    corresponding added line).
-    final_offset  — net offset to apply to source lines that come AFTER the
-                    last hunk (i.e. not present in *explicit*).
-
-    **Modification vs deletion**: within each hunk we pair removed lines with
-    added lines in order.  A paired removal is a *modification* — the old
-    source line maps to the new target line and its coverage data is
-    preserved.  An unpaired removal is a *true deletion* — it maps to None
-    and its coverage data is dropped.
-    """
-    explicit = {}
-    offset = 0
-    last_source_end = 1  # 1-indexed; tracks start of the next unprocessed gap
-
-    for hunk in patched_file:
-        # Lines in the gap before this hunk: shift by accumulated offset
-        for lineno in range(last_source_end, hunk.source_start):
-            explicit[lineno] = lineno + offset
-
-        # Separate removed and added lines within this hunk
-        removed = [line for line in hunk if line.is_removed]
-        added = [line for line in hunk if line.is_added]
-
-        # Context lines: exact source→target mapping
-        for line in hunk:
-            if line.is_context:
-                explicit[line.source_line_no] = line.target_line_no
-
-        # Pair removals with additions (in order).
-        # Paired  → modification: remap to corresponding added line's position.
-        # Unpaired → true deletion: mark as None (coverage data discarded).
-        for i, rm in enumerate(removed):
-            explicit[rm.source_line_no] = added[i].target_line_no if i < len(added) else None
-
-        last_source_end = hunk.source_start + hunk.source_length
-        offset += hunk.target_length - hunk.source_length
-
-    return explicit, offset
-
-
-def _remap_lineno(lineno, explicit, final_offset):
-    """Map one source line number to its target equivalent (or None if deleted)."""
-    if lineno in explicit:
-        return explicit[lineno]
-    return lineno + final_offset   # line is after all hunks
-
-
-def _remap_lines(line_map, patched_file):
-    """Remap a {source_lineno: tests} coverage dict to target line numbers."""
-    explicit, offset = _build_line_mapping(patched_file)
-    new_map = {}
-    for old_lineno, tests in line_map.items():
-        new_lineno = _remap_lineno(old_lineno, explicit, offset)
-        if new_lineno is not None and tests:
-            new_map[new_lineno] = tests
-    return new_map
-
-
-def _remap_scope(scope_map, patched_file):
-    """Remap a {start_line: end_line} scope dict to target line numbers."""
-    explicit, offset = _build_line_mapping(patched_file)
-    new_scope = {}
-    for start, end in scope_map.items():
-        new_start = _remap_lineno(start, explicit, offset)
-        new_end = _remap_lineno(end, explicit, offset)
-        if new_start is not None and new_end is not None:
-            new_scope[new_start] = new_end
-    return new_scope
-
-
-def covtest_merge(folder):
-    """Merge the partial covtest snapshot with the base snapshot.
-
-    Preconditions (all must hold — raises CovTestException otherwise):
-    - Working tree is clean (already committed)
-    - HEAD commit differs from the partial's base_commit
-    - partial.covtest exists in .covtest/
-    - <base_commit>.covtest exists in .covtest/
-
-    Algorithm:
-    1. Load base snapshot
-    2. Compute diff base_commit → HEAD
-    3. Remap line numbers in py_files / scopes for every modified file
-    4. Drop entries for deleted files
-    5. Save HEAD_commit.covtest and delete partial.covtest
-    """
-    # --- preconditions -------------------------------------------------------
-    if git_dirty(folder):
-        raise CovTestException(
-            "working tree has uncommitted changes — commit first, then run 'covtest merge'"
-        )
-
-    if not PartialData.exists(folder):
-        raise CovTestException(
-            "no partial covtest data found — run 'pytest -p covtest.predict' first"
-        )
-
-    partial = PartialData.load(folder)
-
-    head_commit = git_commits(folder, 1)[0]
-    if head_commit == partial.base_commit:
-        raise CovTestException(
-            f"HEAD ({head_commit[:8]}) matches the base snapshot commit — no new commit to merge"
-        )
-
-    base_file = os.path.join(folder, COVTEST_FOLDER, partial.base_commit + ".covtest")
-    if not os.path.exists(base_file):
-        raise CovTestException(
-            f"base snapshot not found: {base_file} — run 'covtest process' first"
-        )
-
-    # --- merge ---------------------------------------------------------------
-    t0 = time.time()
-
-    out_verbose("loading base snapshot ...")
-    t = time.time()
-    base = CovTestData.load(base_file)
-    out_verbose(f"load snapshot    : {time.time() - t:5.1f}s")
-
-    out_verbose("computing diff ...")
-    t = time.time()
-    text_diff = git_diff(folder, partial.base_commit)
-    patch = PatchSet(str(text_diff))
-    n_modified = len(patch.modified_files)
-    n_removed = len(patch.removed_files)
-    out_verbose(f"compute diff     : {time.time() - t:5.1f}s  "
-                f"({n_modified} modified, {n_removed} removed)")
-
-    out_verbose("remapping lines ...")
-    t = time.time()
-    new_py_files = dict(base.py_files)
-    new_scopes = dict(base.scopes)
-    new_data_files = dict(base.data_files)
-
-    for pf in patch.modified_files:
-        fp = pf.path.replace("\\", "/")
-        if fp in base.py_files:
-            new_py_files[fp] = _remap_lines(base.py_files[fp], pf)
-        if fp in base.scopes:
-            new_scopes[fp] = _remap_scope(base.scopes[fp], pf)
-
-    for pf in patch.removed_files:
-        fp = pf.path.replace("\\", "/")
-        new_py_files.pop(fp, None)
-        new_scopes.pop(fp, None)
-        new_data_files.pop(fp, None)
-
-    out_verbose(f"remap lines      : {time.time() - t:5.1f}s")
-
-    merged = CovTestData(
-        data_files=new_data_files,
-        py_files=new_py_files,
-        scopes=new_scopes,
-    )
-
-    new_file = os.path.join(folder, COVTEST_FOLDER, head_commit + ".covtest")
-    out_verbose("saving snapshot ...")
-    t = time.time()
-    merged.save(new_file)
-    out_verbose(f"save snapshot    : {time.time() - t:5.1f}s  ({new_file})")
-    out_verbose(f"total            : {time.time() - t0:5.1f}s")
-
-    partial.delete(folder)
-    return new_file

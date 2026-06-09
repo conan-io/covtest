@@ -3,8 +3,8 @@ import os
 
 import pytest
 
-from covtest.covtest import covtest_postprocess
-from covtest.git import git_dirty
+from covtest.covtest import process
+from covtest.util.git import git_dirty
 from covtest.output import out_info, set_level, INFO, VERBOSE, DEBUG, TRACE
 
 
@@ -94,5 +94,5 @@ def pytest_sessionfinish(session, exitstatus):
         out_info("working tree has uncommitted changes — snapshot not saved")
         return
     out_info("processing coverage data")
-    covtest_postprocess(case_folder)
+    process(case_folder)
     out_info("done")

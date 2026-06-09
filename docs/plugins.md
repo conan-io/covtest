@@ -53,7 +53,7 @@ pytest --cov=mypackage --cov-context=test -p covtest.process
 **What it does:**
 
 1. Installs an autouse `patch_open` fixture that intercepts `builtins.open` calls and records which test opened which file. This lets covtest track data-file dependencies (e.g. a test that reads `cities.txt`).
-2. After the session, runs `covtest_postprocess` — the same operation as `covtest process` on the command line.
+2. After the session, runs `process` — the same operation as `covtest process` on the command line.
 3. Requires a **clean git commit**. If the working tree is dirty, covtest prints a message and skips saving. There is no error — the session still passes.
 
 **Typical output (appended to pytest output):**

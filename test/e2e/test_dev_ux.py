@@ -4,7 +4,7 @@ import textwrap
 import pytest
 
 from covtest.covtest_data import CovTestData
-from covtest.git import git_commits
+from covtest.util.git import git_commits
 from test.e2e.client import TestClient
 from test.integration.test_cases_utils import prepare_src_folder, git_init_repo, do_code_changes
 

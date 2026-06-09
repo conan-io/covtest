@@ -37,6 +37,38 @@ from covtest.output import out_verbose, out_info
 _SENTINEL = object()
 
 
+def get_all_sources_by_file(cov_data, parse_results, folder):
+    # Include ALL project files (not just test files): source files like leaf.py
+    # may import a package with a test-attributed line, which is exactly the
+    # trigger the projection needs.  Only add a dotpath if at least one of its
+    # declaration lines has direct test attribution — dotpaths whose lines are
+    # only covered at collection time (empty test set) produce no projection.
+    all_import_sources = {}
+    for f in cov_data:
+        if f not in parse_results.files:
+            continue
+        file_cov = cov_data[f]
+        # Use local_import_sources (function-body imports only) so that only tests
+        # which *directly execute* an import statement at run-time are projected
+        # onto the imported module's lines.  Module-level imports run at collection
+        # time and are often shared across many tests, leading to massive
+        # over-prediction when the transitive import chain is large (e.g. any
+        # Django test file that imports from django.db ends up attributing every
+        # test to django.utils.translation.trans_real).
+        for dotpath, decl_lines in parse_results.files[f].local_import_sources.items():
+            if any(file_cov.get(line) for line in decl_lines):
+                all_import_sources.setdefault(f, []).append(dotpath)
+                # Also include every ancestor package so that the transitive
+                # import chain (e.g. physics/__init__ → units → si.py) gets
+                # traced even when only a deep leaf is imported directly.
+                parts = dotpath.split(".")
+                for i in range(1, len(parts)):
+                    ancestor = ".".join(parts[:i])
+                    if _is_project_dotpath(ancestor, folder):
+                        all_import_sources.setdefault(f, []).append(ancestor)
+    return all_import_sources
+
+
 def build_import_graph(folder, import_sources_by_file):
     """Compute import-time line coverage for every dotpath found in test files.
 

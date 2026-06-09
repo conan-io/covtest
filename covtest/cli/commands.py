@@ -2,9 +2,10 @@ import os
 import os.path
 
 from covtest.config import read_config, config_list_info
-from covtest.covtest import covtest_merge, covtest_postprocess, predict_tests, COVTEST_FOLDER
+from covtest.covtest import process, predict_tests, COVTEST_FOLDER
+from covtest.incremental import covtest_merge
 from covtest.errors import CovTestException
-from covtest.git import git_commits
+from covtest.util.git import git_commits
 from covtest.output import out_info, out_verbose, out_error
 from covtest.util.files import save
 
@@ -20,7 +21,7 @@ def _split_context_test(t):
 def cmd_process(folder):
     out_info("processing coverage data")
     try:
-        covtest_postprocess(str(folder),)
+        process(str(folder),)
     except CovTestException as e:
         out_error(str(e))
         return -1

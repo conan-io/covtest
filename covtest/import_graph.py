@@ -44,10 +44,10 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
     # declaration lines has direct test attribution — dotpaths whose lines are
     # only covered at collection time (empty test set) produce no projection.
     all_import_sources = {}
-    for f in cov_data:
-        if f not in parse_results.files:
+    for f, file_cov in cov_data.items():
+        parsed_file_data = parse_results.files.get(f)
+        if parsed_file_data is None:
             continue
-        file_cov = cov_data[f]
         # Use local_import_sources (function-body imports only) so that only tests
         # which *directly execute* an import statement at run-time are projected
         # onto the imported module's lines.  Module-level imports run at collection
@@ -55,7 +55,7 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
         # over-prediction when the transitive import chain is large (e.g. any
         # Django test file that imports from django.db ends up attributing every
         # test to django.utils.translation.trans_real).
-        for dotpath, decl_lines in parse_results.files[f].local_import_sources.items():
+        for dotpath, decl_lines in parsed_file_data.local_import_sources.items():
             if any(file_cov.get(line) for line in decl_lines):
                 all_import_sources.setdefault(f, []).append(dotpath)
                 # Also include every ancestor package so that the transitive

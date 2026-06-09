@@ -57,26 +57,34 @@ class CovTestData:
             for f, td in self.py_files.items()
         }
 
+        def _collect_tests(test_data_, lines_):
+            """Return the union of tests attributed to any of the given lines."""
+            if not lines_:
+                return None
+            result = set()
+            for line in lines_:
+                t = test_data_.get(line)
+                if t:
+                    result.update(t)
+            return result
+
+        def _propagate(test_data_, lines_, tests):
+            """Add *tests* to every line in *lines_*, creating entries as needed."""
+            if not lines_ or not tests:
+                return
+            for line in lines_:
+                test_data_.setdefault(line, set()).update(tests)
+
         def _extend_global_usages(test_data_, parsed_file_data_):
-            for name, lines_ in parsed_file_data_.global_usages.items():
-                tests_from_usages = set()
-                for lin_ in lines_:
-                    try:
-                        tests_from_usages.update(test_data[lin_])
-                    except KeyError:
-                        pass  # Maybe the global was not properly detected TODO
+            for name, usage_lines_ in parsed_file_data_.global_usages.items():
+                tests = _collect_tests(test_data_, usage_lines_)
                 defined_lines = parsed_file_data_.global_definitions.get(name)
-                if defined_lines:  # The whole scope of definition
-                    for defined_line in defined_lines:
-                        try:
-                            tests_ = test_data_[defined_line]
-                            tests_.update(tests_from_usages)
-                        except KeyError:
-                            pass  # TODO: Same as above, globals not parsed
+                _propagate(test_data_, defined_lines, tests)
 
         for file, test_data in self.py_files.items():
-            # print("Extending mappings for", file)
             parsed_file_data = parse_data.files[file]
+
+            # 1st projection: The scopes
             # Every line covered by coverage but without tests gets the
             # tests of its scoped lines
             # A class gets all of its scope, a function the same, etc.
@@ -90,40 +98,29 @@ class CovTestData:
                         lin_tests = test_data.get(lin, [])
                         tests.update(lin_tests)
 
+            # 2nd projection, the used global objects within this file
             _extend_global_usages(test_data, parsed_file_data)
 
-            # Extend mappings for imports within this file
-            # Every line without tests that is an import
+            # 3rd projection: the imports
             for import_name, import_declared_lines in parsed_file_data.imports.items():
-                # Find if import is used in file
+                # within this file
                 usage_lines = parsed_file_data.imports_usages.get(import_name)
-                if not usage_lines:
-                    continue  # This import seems unused in this file
-                import_tests = set()
-                for usage_line in usage_lines:
-                    lin_tests = test_data.get(usage_line)
-                    if lin_tests:
-                        import_tests.update(lin_tests)
-                if import_tests:
-                    for import_declared_line in import_declared_lines:
-                        try:
-                            tests = test_data[import_declared_line]
-                            tests.update(import_tests)
-                        except KeyError:
-                            pass  # TODO, missing match
+                import_tests = _collect_tests(test_data, usage_lines)
+                _propagate(test_data, import_declared_lines, import_tests)
 
-                # Project this import mappings into other files, the ones imported from
-                # Brute force, search in every other file for this name
+                # Project into other files — brute-force search for this name
+                # TODO: maybe this can be improved with the build-import-graph
                 for other_file, other_test_data in self.py_files.items():
                     if other_file == file:
                         continue
                     other_parsed_file_data = parse_data.files[other_file]
                     for global_def, global_def_lines in other_parsed_file_data.global_definitions.items():
                         if import_name == global_def:
-                            for other_line in global_def_lines:  # Found match
+                            for other_line in global_def_lines:
                                 other_test_data.setdefault(other_line, set()).update(import_tests)
 
         # Second pass, complete with global objects usages
+        # In case some of the global objects are imported from other files and got new tests
         for file, test_data in self.py_files.items():
             parsed_file_data = parse_data.files[file]
             _extend_global_usages(test_data, parsed_file_data)
@@ -140,13 +137,7 @@ class CovTestData:
             if parsed_file_data is None:
                 continue
             for dotpath, decl_lines in parsed_file_data.local_import_sources.items():
-                # Collect tests that annotated the import declaration line(s)
-                # in the RAW (unenriched) coverage data.
-                import_tests = set()
-                for decl_line in decl_lines:
-                    lin_tests = raw_test_data.get(decl_line)
-                    if lin_tests:
-                        import_tests.update(lin_tests)
+                import_tests = _collect_tests(raw_test_data, decl_lines)
                 if not import_tests:
                     continue  # import line not directly covered → skip
 

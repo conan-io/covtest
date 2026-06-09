@@ -100,24 +100,18 @@ class _ParsedFileData:
 
         local_import_sources = {}
         for node in ast.walk(rootnode):
-            if isinstance(node, ast.ImportFrom):
-                module = node.module or ""
+            if isinstance(node, (ast.ImportFrom, ast.Import)):
                 is_local = id(node) in _local_node_ids
                 for alias in node.names:
+                    # from X.Y import Z  →  src="X.Y", name="Z"
+                    # import X.Y         →  src="X.Y", name="X.Y"
+                    src = node.module if isinstance(node, ast.ImportFrom) else alias.name
                     for line in range(node.lineno, node.end_lineno + 1):
                         imports.setdefault(alias.name, []).append(line)
-                        if module:
-                            import_sources.setdefault(module, []).append(line)
+                        if src:  # None only for bare relative: "from . import X"
+                            import_sources.setdefault(src, []).append(line)
                             if is_local:
-                                local_import_sources.setdefault(module, []).append(line)
-            elif isinstance(node, ast.Import):
-                is_local = id(node) in _local_node_ids
-                for alias in node.names:
-                    for line in range(node.lineno, node.end_lineno + 1):
-                        imports.setdefault(alias.name, []).append(line)
-                        import_sources.setdefault(alias.name, []).append(line)
-                        if is_local:
-                            local_import_sources.setdefault(alias.name, []).append(line)
+                                local_import_sources.setdefault(src, []).append(line)
         return imports, import_sources, local_import_sources
 
     @staticmethod

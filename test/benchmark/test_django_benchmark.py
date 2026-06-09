@@ -38,13 +38,21 @@ DJANGO_REPO_URL = "https://github.com/django/django"
 
 BREAKING_CHANGES = [
     {
-        "id": "queryset_exists_invert",
-        "file": "django/db/models/query.py",
-        "line": 1338,
-        "original": "        return bool(self._result_cache)\n",
-        "replacement": "        return not bool(self._result_cache)\n",
-        "description": "QuerySet.exists() returns inverted bool for cached results",
+        "id": "tree_py_negate",
+        "file": "django/utils/tree.py",
+        "line": 126,
+        "original": "        self.negated = not self.negated\n",
+        "replacement": "        kk\n",
+        "description": "Breaking the utils tree negate",
     },
+    {
+        "id": "break_view_base",
+        "file": "django/views/generic/base.py",
+        "line": 278,
+        "original": "        return self.get(request, *args, **kwargs)\n",
+        "replacement": "        kk\n",
+        "description": "Breaking debug.py",
+    }
 ]
 
 
@@ -102,7 +110,7 @@ def django_repo(tmp_path_factory):
         test_scope="tests/queries/",
         cov_target="django",
         setup_hook=_django_setup,
-    )
+        run_test_parallel=False)
 
 
 @pytest.mark.benchmark
@@ -114,8 +122,7 @@ def test_covtest_predicts_broken_tests(django_repo, change):
         apply_change(repo_dir, change)
         broken, total = get_broken_tests(
             repo_dir, venv_python, "tests/queries/",
-            timeout_per_test=60,
-            wall_timeout=20 * 60,
+            run_test_parallel=False
         )
         predicted = get_predicted_tests(repo_dir, venv_python)
         assert_benchmark(change, broken, total, predicted)

@@ -32,7 +32,7 @@ class _ParsedFileData:
             if isinstance(node, ast.Name):
                 usage_names.setdefault(node.id, set()).add(node.lineno)
 
-        self.imports, self.import_sources = self._parse_imports(rootnode)
+        self.imports, self.import_sources, self.local_import_sources = self._parse_imports(rootnode)
         self.imports_usages = self._parse_usages(usage_names, self.imports)
         self.global_definitions = self._parse_globals_defs(rootnode)
         self.global_usages = self._parse_usages(usage_names, self.global_definitions)
@@ -72,29 +72,53 @@ class _ParsedFileData:
 
     @staticmethod
     def _parse_imports(rootnode):
-        """Return (imports, import_sources).
+        """Return (imports, import_sources, local_import_sources).
 
-        imports:        {imported_name: [lines]}   e.g. "FockSpace" → [5]
-        import_sources: {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
-
-        Both module-level and function-body imports are captured (ast.walk).
+        imports:              {imported_name: [lines]}   e.g. "FockSpace" → [5]
+        import_sources:       {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
+                              Includes ALL imports (module-level + function-body).
+        local_import_sources: {source_module: [lines]}
+                              Function-body imports only — imports inside a ``def`` or
+                              ``async def`` block.  Used for import-time projection so
+                              that only tests which *directly execute* an import statement
+                              (not every test in a file that has a module-level import)
+                              are projected onto the imported module's lines.
         """
         imports = {}
         import_sources = {}
+
+        # Collect the AST node ids of every Import/ImportFrom that lives inside
+        # a function or async-function body.  Using object id() avoids a second
+        # full tree walk and is safe because all nodes exist for the lifetime of
+        # this call.
+        _local_node_ids: set = set()
+        for node in ast.walk(rootnode):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for child in ast.walk(node):
+                    if isinstance(child, (ast.Import, ast.ImportFrom)):
+                        _local_node_ids.add(id(child))
+
+        local_import_sources = {}
         for node in ast.walk(rootnode):
             if isinstance(node, ast.ImportFrom):
                 module = node.module or ""
+                is_local = id(node) in _local_node_ids
                 for alias in node.names:
                     for line in range(node.lineno, node.end_lineno + 1):
                         imports.setdefault(alias.name, []).append(line)
                         if module:
                             import_sources.setdefault(module, []).append(line)
+                            if is_local:
+                                local_import_sources.setdefault(module, []).append(line)
             elif isinstance(node, ast.Import):
+                is_local = id(node) in _local_node_ids
                 for alias in node.names:
                     for line in range(node.lineno, node.end_lineno + 1):
                         imports.setdefault(alias.name, []).append(line)
                         import_sources.setdefault(alias.name, []).append(line)
-        return imports, import_sources
+                        if is_local:
+                            local_import_sources.setdefault(alias.name, []).append(line)
+        return imports, import_sources, local_import_sources
 
     @staticmethod
     def _parse_usages(usage_names, defs):

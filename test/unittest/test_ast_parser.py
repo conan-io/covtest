@@ -71,10 +71,11 @@ def test_parse_globals_defs_non_name_assign_target():
 
 
 def test_parse_imports_local():
-    """Imports inside a function body must appear in both imports and import_sources."""
+    """Imports inside a function body must appear in both imports and import_sources.
+    Module-level imports must NOT appear in local_import_sources."""
     src = textwrap.dedent("""\
         from someglobal.somemodule import something
-        
+
         def test_foo():
             from mypackage.mymodule import MyClass
             assert MyClass()
@@ -84,10 +85,12 @@ def test_parse_imports_local():
             another.module.do_something()
         """)
     parsed = _ParsedFileData(src)
-    # imports: the imported *name*
+    # imports: the imported *name* — all imports regardless of scope
     assert parsed.imports == {'MyClass': [4], 'another.module': [8], 'something': [1]}
-    # import_sources: the *source module path*
+    # import_sources: the *source module path* — all imports regardless of scope
     assert parsed.import_sources == {'another.module': [8], 'mypackage.mymodule': [4], 'someglobal.somemodule': [1]}
+    # local_import_sources: function-body imports only — someglobal is module-level, excluded
+    assert parsed.local_import_sources == {'another.module': [8], 'mypackage.mymodule': [4]}
 
 
 def test_python_parsed_scopes():

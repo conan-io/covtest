@@ -36,6 +36,7 @@ def setup_repo(
     test_scope: "str | list[str]",
     cov_target: str,
     setup_hook: "callable | None" = None,
+    run_test_parallel=True
 ) -> dict:
     """Clone *url* at *tag*, create a dedicated venv, run the initial coverage
     suite, and process the snapshot with covtest.
@@ -63,6 +64,8 @@ def setup_repo(
         after all pip installs but before the initial coverage run.  Use this
         to write config files (e.g. ``pytest.ini``) that the target project
         needs when invoked via plain ``pytest`` instead of its own test runner.
+    run_test_parallel:
+        Whether to run the test suite in parallel or not.
 
     Returns
     -------
@@ -111,9 +114,10 @@ def setup_repo(
     # Initial coverage run.
     scope_args = [test_scope] if isinstance(test_scope, str) else list(test_scope)
     print(f"Running pytest with coverage over {scope_args} …")
+    parallel_args = ["-n", "auto"] if run_test_parallel else []
     result = subprocess.run(
         [venv_python, "-m", "pytest", *scope_args,
-         "-n", "auto",
+         *parallel_args,
          f"--cov={cov_target}", "--cov-context=test",
          "--tb=no", "-q"],
         cwd=repo_dir,
@@ -193,6 +197,7 @@ def get_broken_tests(
     *,
     timeout_per_test: "int | None" = None,
     wall_timeout: "int | None" = None,
+    run_test_parallel=True
 ) -> tuple:
     """Run the test suite under the mutation and return ``(failed_ids, total)``.
 
@@ -212,6 +217,8 @@ def get_broken_tests(
         Hard wall-clock cap in seconds for the entire subprocess.  If pytest
         does not finish within this limit it is killed and whatever partial
         results exist are used.  ``None`` means no limit.
+    run_test_parallel : bool
+        Whether to run tests in parallel.
 
     Returns
     -------
@@ -220,20 +227,23 @@ def get_broken_tests(
     """
     scope_args = [test_scope] if isinstance(test_scope, str) else list(test_scope)
     report_file = os.path.join(repo_dir, ".report.json")
+    parallel_args = ["-n", "auto"] if run_test_parallel else []
     cmd = [
         venv_python, "-m", "pytest", *scope_args,
-        "-n", "auto",
+        *parallel_args,
         "--tb=no", "-q",
         "--json-report", f"--json-report-file={report_file}",
     ]
     if timeout_per_test is not None:
         cmd += [f"--timeout={timeout_per_test}", "--timeout-method=thread"]
 
+    if os.path.exists(report_file):
+        os.remove(report_file)
     try:
         subprocess.run(
             cmd,
             cwd=repo_dir,
-            capture_output=True,
+            # capture_output=True,
             text=True,
             timeout=wall_timeout,
         )
@@ -241,7 +251,7 @@ def get_broken_tests(
         print(f"WARNING: pytest exceeded the {wall_timeout}s wall-clock cap and was killed.")
 
     if not os.path.exists(report_file):
-        return set(), 0
+        raise Exception("Error: No report file found.")
     with open(report_file) as f:
         report = json.load(f)
     tests = report.get("tests", [])

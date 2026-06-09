@@ -205,7 +205,14 @@ def covtest_postprocess(folder, covtest_file=None):
         if f not in parse_results.files:
             continue
         file_cov = cov_data[f]
-        for dotpath, decl_lines in parse_results.files[f].import_sources.items():
+        # Use local_import_sources (function-body imports only) so that only tests
+        # which *directly execute* an import statement at run-time are projected
+        # onto the imported module's lines.  Module-level imports run at collection
+        # time and are often shared across many tests, leading to massive
+        # over-prediction when the transitive import chain is large (e.g. any
+        # Django test file that imports from django.db ends up attributing every
+        # test to django.utils.translation.trans_real).
+        for dotpath, decl_lines in parse_results.files[f].local_import_sources.items():
             if any(file_cov.get(l) for l in decl_lines):
                 all_import_sources.setdefault(f, []).append(dotpath)
                 # Also include every ancestor package so that the transitive

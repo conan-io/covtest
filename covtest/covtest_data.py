@@ -139,7 +139,7 @@ class CovTestData:
             parsed_file_data = parse_data.files.get(file)
             if parsed_file_data is None:
                 continue
-            for dotpath, decl_lines in parsed_file_data.import_sources.items():
+            for dotpath, decl_lines in parsed_file_data.local_import_sources.items():
                 # Collect tests that annotated the import declaration line(s)
                 # in the RAW (unenriched) coverage data.
                 import_tests = set()

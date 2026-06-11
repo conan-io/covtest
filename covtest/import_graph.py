@@ -31,11 +31,6 @@ from collections import defaultdict
 
 from covtest.output import out_verbose, out_info
 
-# Sentinel used in the tracer's per-filename memoization cache: distinguishes
-# "not yet checked" from "checked, not under project folder".  A plain
-# dict.get() would conflate those two when the stored value is None/False.
-_SENTINEL = object()
-
 
 def get_all_sources_by_file(cov_data, parse_results, folder):
     # Include ALL project files (not just test files): source files like leaf.py
@@ -88,11 +83,6 @@ def build_import_graph(folder, import_sources_by_file):
         Empty dict for dotpaths whose import failed or produced no project lines.
     """
     folder = os.path.realpath(folder)
-    # normcase folder once so the tracer's hot-path is just a startswith check.
-    # This handles Windows case-insensitivity: frame.f_code.co_filename has the
-    # case used by the loader (sys.path + .pth file + pip), which may differ
-    # from the canonical case returned by realpath.
-    folder_norm = os.path.normcase(folder) + os.sep
 
     # Deduplicate: collect every unique dotpath across all test files
     all_dotpaths = {
@@ -105,12 +95,8 @@ def build_import_graph(folder, import_sources_by_file):
              f"{len(import_sources_by_file)} test files")
 
     closure_cache = {}  # dotpath → {rel_path: set(lines)}
-    sys.path.insert(0, folder)
-    try:
-        for dotpath in sorted(all_dotpaths):
-            _trace_module(dotpath, folder, folder_norm, closure_cache)
-    finally:
-        sys.path.remove(folder)
+    for dotpath in sorted(all_dotpaths):
+        _trace_module(dotpath, folder, closure_cache)
 
     # Summary: how many dotpaths captured at least one project line.  Useful for
     # spotting cases where a critical ancestor silently produced 0 lines (which
@@ -132,7 +118,7 @@ def _is_project_dotpath(dotpath, folder):
             os.path.isfile(os.path.join(folder, parts, "__init__.py")))
 
 
-def _trace_module(dotpath, folder, folder_norm, closure_cache):
+def _trace_module(dotpath, folder, closure_cache):
     """Trace one module import and cache the result.
 
     If *dotpath* is already in *closure_cache* this is a no-op.
@@ -165,7 +151,7 @@ def _trace_module(dotpath, folder, folder_norm, closure_cache):
 
     # --- Stage 1: local eviction (cheap) --------------------------------------
     result = _attempt_trace(
-        dotpath, folder, folder_norm,
+        dotpath, folder,
         evict_keys={dotpath} | {k for k in sys.modules if k.startswith(dotpath + ".")},
     )
     if result.get("ok") and result["n_lines"] > 0:
@@ -209,7 +195,7 @@ def _trace_module(dotpath, folder, folder_norm, closure_cache):
     out_info(f"import_graph: '{dotpath}' Stage 1 failed "
              f"({result.get('error', '0 lines')}); retrying with full '{top_level}' eviction")
     result2 = _attempt_trace(
-        dotpath, folder, folder_norm,
+        dotpath, folder,
         evict_keys={top_level} | {k for k in sys.modules if k.startswith(top_level + ".")},
     )
     closure_cache[dotpath] = result2.get("lines", {})
@@ -221,53 +207,99 @@ def _trace_module(dotpath, folder, folder_norm, closure_cache):
                  f"({result2.get('error', '0 lines')}); giving up")
 
 
-def _attempt_trace(dotpath, folder, folder_norm, evict_keys):
-    """Run one trace attempt with the given eviction set.
+def trace_import(dotpath, folder):
+    """Trace a fresh import and return which project lines execute.
 
-    Returns a dict with keys:
-        ok       : bool — whether import_module raised no exception
-        n_lines  : int  — total project lines captured
-        lines    : dict[rel_path, set[int]] — captured line map
-        error    : str  — present only when ok is False
+    Convenience wrapper around :func:`_attempt_trace` intended for tests and
+    ad-hoc inspection.
+
+    Parameters
+    ----------
+    dotpath : str
+        Python module dotpath (e.g. ``"mypkg.sub"``).
+    folder : str
+        Absolute path to the project root.  Only lines from files under this
+        directory are captured.
+
+    Returns
+    -------
+    dict[str, set[int]]
+        ``{relative_file_path: set_of_line_numbers}`` — the project lines that
+        executed when *dotpath* was imported from a clean state.
+        *dotpath* and its subtree are evicted from ``sys.modules`` before the
+        trace; the original state is restored afterwards.
     """
-    # Evict and remember original modules so sys.modules can be restored.
-    evicted = {}
-    for key in evict_keys:
-        module = sys.modules.pop(key, None)
-        if module is not None:
-            evicted[key] = module
+    folder = os.path.realpath(folder)
+    evict_keys = {dotpath} | {k for k in sys.modules if k.startswith(dotpath + ".")}
+    return _attempt_trace(dotpath, folder, evict_keys)["lines"]
 
+
+def _run_trace(dotpath, folder):
+    """Core tracing mechanism using sys.monitoring (Python ≥ 3.12).
+
+    Adds *folder* to ``sys.path`` for the duration of the import so the module
+    can be found.  Does **not** touch ``sys.modules`` — no eviction before, no
+    restoration after.  The caller owns that lifecycle.
+
+    Unlike the legacy ``sys.settrace`` approach, ``sys.monitoring`` callbacks
+    are dispatched by the interpreter's monitoring layer without incrementing
+    the C-level recursion counter, so no ``setrecursionlimit`` bump is needed.
+
+    Returning ``sys.monitoring.DISABLE`` for non-project code objects is a
+    bonus optimisation: after the first LINE event from a function that lives
+    outside *folder*, Python stops firing callbacks for that code object
+    entirely — making the hot path essentially free for stdlib/site-packages.
+
+    Returns
+    -------
+    tuple[dict[str, set[int]], str | None]
+        ``(lines_map, error)`` where *lines_map* is ``{rel_path: set(linenos)}``
+        for project files only, and *error* is an exception description string
+        (or ``None`` when the import succeeded).
+    """
+    folder_norm = os.path.normcase(folder) + os.sep
     executed = defaultdict(set)  # abs_filename → {linenos}
     normcase = os.path.normcase
-    _norm = {}  # co_filename → True (under folder) | False (outside)
+    _norm = {}  # co_filename → True/False (under folder?)
 
-    def _tracer(frame, event, _arg):
-        if event == "line":
-            fn = frame.f_code.co_filename
-            under = _norm.get(fn, _SENTINEL)
-            if under is _SENTINEL:
-                under = normcase(fn).startswith(folder_norm)
-                _norm[fn] = under
-            if under:
-                executed[fn].add(frame.f_lineno)
-        return _tracer
+    def _line_handler(code, line_number):
+        fn = code.co_filename
+        under = _norm.get(fn)
+        if under is None:
+            under = normcase(fn).startswith(folder_norm)
+            _norm[fn] = under
+        if not under:
+            return sys.monitoring.DISABLE  # silence this code object forever
+        executed[fn].add(line_number)
 
-    # Bump recursion limit: sys.settrace doubles per-frame overhead and deep
-    # packages (sympy.physics) easily exceed the default 1000-frame limit.
-    old_tracer = sys.gettrace()
-    old_limit = sys.getrecursionlimit()
-    sys.setrecursionlimit(max(old_limit, 50000))
-    sys.settrace(_tracer)
+    # Claim the first free monitoring tool slot (IDs 0-5).
+    # COVERAGE_ID (2) is the semantically appropriate choice; fall back to the
+    # generic free IDs (3, 4) if something else already holds it.
+    tool_id = None
+    for tid in (sys.monitoring.COVERAGE_ID, 3, 4,
+                sys.monitoring.PROFILER_ID, sys.monitoring.DEBUGGER_ID,
+                sys.monitoring.OPTIMIZER_ID):
+        if sys.monitoring.get_tool(tid) is None:
+            sys.monitoring.use_tool_id(tid, "covtest")
+            tool_id = tid
+            break
+    if tool_id is None:
+        raise RuntimeError("No free sys.monitoring tool ID available")
+
+    sys.monitoring.register_callback(tool_id, sys.monitoring.events.LINE, _line_handler)
+    sys.monitoring.set_events(tool_id, sys.monitoring.events.LINE)
+    sys.path.insert(0, folder)
     error = None
     try:
         importlib.import_module(dotpath)
     except BaseException as exc:  # includes RecursionError, KeyboardInterrupt
         error = f"{type(exc).__name__}: {exc}"
     finally:
-        sys.settrace(old_tracer)
-        sys.setrecursionlimit(old_limit)
+        sys.path.remove(folder)
+        sys.monitoring.set_events(tool_id, 0)
+        sys.monitoring.register_callback(tool_id, sys.monitoring.events.LINE, None)
+        sys.monitoring.free_tool_id(tool_id)
 
-    # Build result map (project paths only — files under folder).
     folder_prefix = folder + os.sep
     lines_map = {}
     for abs_path, lines in executed.items():
@@ -277,12 +309,32 @@ def _attempt_trace(dotpath, folder, folder_norm, evict_keys):
         rel = os.path.relpath(real_path, folder).replace("\\", "/")
         lines_map[rel] = lines
 
-    # Restore sys.modules — remove anything added during the trace, reinstate
-    # everything that was evicted.  This is essential so that subsequent
-    # traces aren't perturbed by leftover state from this attempt.
+    return lines_map, error
+
+
+def _attempt_trace(dotpath, folder, evict_keys):
+    """Evict *evict_keys* from sys.modules, run :func:`_run_trace`, then restore.
+
+    Returns a dict with keys:
+        ok       : bool — whether import_module raised no exception
+        n_lines  : int  — total project lines captured
+        lines    : dict[rel_path, set[int]] — captured line map
+        error    : str  — present only when ok is False
+    """
+    # Evict and remember originals so sys.modules can be restored afterwards.
+    evicted = {}
+    for key in evict_keys:
+        module = sys.modules.pop(key, None)
+        if module is not None:
+            evicted[key] = module
+
+    lines_map, error = _run_trace(dotpath, folder)
+
+    # Remove anything added during the trace that belongs to the evicted set,
+    # then reinstate the originals.
     for key in list(sys.modules):
         if key in evicted:
-            continue  # will be reinstated below
+            continue  # reinstated below
         if any(key == ek or key.startswith(ek + ".") for ek in evict_keys):
             del sys.modules[key]
     sys.modules.update(evicted)

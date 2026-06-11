@@ -106,6 +106,8 @@ class CovTestData:
                 # within this file
                 usage_lines = parsed_file_data.imports_usages.get(import_name)
                 import_tests = _collect_tests(test_data, usage_lines)
+                if not import_tests:
+                    continue
                 _propagate(test_data, import_declared_lines, import_tests)
 
                 # Project into other files — brute-force search for this name

@@ -163,32 +163,42 @@ def cmd_config(folder, config_command):
         return 0
 
 
-def cmd_debug(folder, debug_command, pattern, test_pattern=None):
+def cmd_debug(folder, debug_command, pattern=None, test_pattern=None,
+              raw_coverage=False, tests_only=False, files_only=False):
     if debug_command == "source":
         import fnmatch
         from covtest.covtest_data import CovTestData
-        from covtest.covtest import get_base_commit
+        from covtest.covtest import get_base_commit, extract_coverage
 
-        cfg = read_config(folder)
-        base_commit = get_base_commit(folder, cfg)
-        if base_commit is None:
-            out_error("no covtest data found — run 'covtest process' first.")
-            return -1
-
-        covtest_file = folder / COVTEST_FOLDER / (base_commit + ".covtest")
-        out_info(f"snapshot: {covtest_file}")
-
-        covdata = CovTestData.load(covtest_file)
+        if raw_coverage:
+            out_info(f"raw coverage DB: {folder}/.coverage  (no mapping or projection)")
+            py_files = extract_coverage(str(folder))
+        else:
+            cfg = read_config(folder)
+            base_commit = get_base_commit(folder, cfg)
+            if base_commit is None:
+                out_error("no covtest data found — run 'covtest process' first.")
+                return -1
+            covtest_file = folder / COVTEST_FOLDER / (base_commit + ".covtest")
+            out_info(f"snapshot: {covtest_file}")
+            py_files = CovTestData.load(covtest_file).py_files
 
         matched = {
             fp: line_data
-            for fp, line_data in covdata.py_files.items()
+            for fp, line_data in py_files.items()
             if fnmatch.fnmatch(fp, pattern) or fnmatch.fnmatch(os.path.basename(fp), pattern)
         }
 
         if not matched:
             print(f"No files matching '{pattern}' found in snapshot.")
             return 0
+
+        def _filter_tests(tests):
+            if not tests:
+                return tests
+            if test_pattern is not None:
+                tests = {t for t in tests if fnmatch.fnmatch(t, test_pattern)}
+            return tests
 
         for filepath, line_data in sorted(matched.items()):
             src_path = os.path.join(str(folder), filepath.replace("/", os.sep))
@@ -201,34 +211,71 @@ def cmd_debug(folder, debug_command, pattern, test_pattern=None):
                 source_lines = None
                 n_lines = max(line_data.keys(), default=0)
 
-            n_covered = len(line_data)
+            # Pre-compute effective tests per line so we can skip the whole
+            # file before printing the header when --tests-only is active.
+            if source_lines:
+                rows = [
+                    (lineno, src_line, _filter_tests(line_data.get(lineno)))
+                    for lineno, src_line in enumerate(source_lines, 1)
+                ]
+            else:
+                rows = [
+                    (lineno, f"<line {lineno}>", _filter_tests(tests))
+                    for lineno, tests in sorted(line_data.items())
+                ]
+
+            if tests_only or files_only or test_pattern is not None:
+                rows = [(ln, src, t) for ln, src, t in rows if t]
+
+            if (tests_only or files_only) and not rows:
+                continue  # skip file entirely — nothing to show
+
+            if files_only:
+                print(filepath)
+                continue
+
+            n_covered = sum(1 for _, _, t in rows if t)
             width = len(str(n_lines))
-            header = f"{filepath}  ({n_covered} lines with test coverage)"
+            label = "raw coverage" if raw_coverage else "test coverage"
+            header = f"{filepath}  ({n_covered} lines with {label})"
             print(f"\n{header}")
             print("-" * len(header))
 
-            def _filter_tests(tests):
-                if not tests or test_pattern is None:
-                    return tests
-                return {t for t in tests if fnmatch.fnmatch(t, test_pattern)}
-
-            if source_lines:
-                for lineno, src_line in enumerate(source_lines, 1):
-                    tests = _filter_tests(line_data.get(lineno))
-                    if test_pattern and not tests:
-                        continue
-                    print(f"  {lineno:{width}} | {src_line}")
-                    if tests:
-                        for t in sorted(tests):
-                            print(f"  {' ' * width} |   -> {t}")
-            else:
+            if not source_lines:
                 print(f"  (source not found at {src_path} — snapshot data only)")
-                for lineno, tests in sorted(line_data.items()):
-                    tests = _filter_tests(tests)
-                    if test_pattern and not tests:
-                        continue
-                    print(f"  {lineno:{width}} | <line {lineno}>")
-                    for t in sorted(tests):
-                        print(f"  {' ' * width} |   -> {t}")
+
+            for lineno, src_line, tests in rows:
+                print(f"  {lineno:{width}} | {src_line}")
+                for t in sorted(tests or ()):
+                    print(f"  {' ' * width} |   -> {t}")
+
+        return 0
+
+    if debug_command == "summary":
+        from collections import Counter
+        from covtest.covtest_data import CovTestData
+        from covtest.covtest import get_base_commit, extract_coverage
+
+        if raw_coverage:
+            out_info(f"raw coverage DB: {folder}/.coverage  (no mapping or projection)")
+            py_files = extract_coverage(str(folder))
+        else:
+            cfg = read_config(folder)
+            base_commit = get_base_commit(folder, cfg)
+            if base_commit is None:
+                out_error("no covtest data found — run 'covtest process' first.")
+                return -1
+            covtest_file = folder / COVTEST_FOLDER / (base_commit + ".covtest")
+            out_info(f"snapshot: {covtest_file}")
+            py_files = CovTestData.load(covtest_file).py_files
+
+        n_files = len(py_files)
+        print(f"\nFiles with covtest data: {n_files}")
+
+        folder_counts = Counter(fp.split("/")[0] for fp in py_files)
+        count_width = len(str(max(folder_counts.values(), default=0)))
+        print("\nFirst-level folders:")
+        for folder_name, count in sorted(folder_counts.items(), key=lambda x: -x[1]):
+            print(f"  {folder_name + '/':40}  {count:{count_width}} files")
 
         return 0

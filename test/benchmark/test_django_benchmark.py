@@ -46,12 +46,12 @@ BREAKING_CHANGES = [
         "description": "Breaking the utils tree negate",
     },
     {
-        "id": "break_view_base",
-        "file": "django/views/generic/base.py",
-        "line": 278,
-        "original": "        return self.get(request, *args, **kwargs)\n",
-        "replacement": "        kk\n",
-        "description": "Breaking debug.py",
+        "id": "break_regex",
+        "file": "django/utils/http.py",
+        "line": 376,
+        "original": '        disposition = "attachment" if as_attachment else "inline"\n',
+        "replacement": "        \n",
+        "description": "Breaking regex_helper.py",
     }
 ]
 

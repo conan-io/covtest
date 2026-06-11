@@ -1,4 +1,3 @@
-import pytest
 
 
 def test_suite_to_run_nearest_not_applied_to_test_files():

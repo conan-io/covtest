@@ -166,8 +166,51 @@ def _parse_args(argv):
         dest="test_pattern",
         help="Only show tests whose node ID matches this fnmatch pattern, e.g. '*test_foo*'",
     )
+    p_debug_source.add_argument(
+        "--raw-coverage",
+        action="store_true",
+        default=False,
+        dest="raw_coverage",
+        help="Read directly from the .coverage DB instead of the covtest snapshot; "
+             "shows raw line attribution before any mapping or projection",
+    )
+    p_debug_source.add_argument(
+        "--tests-only",
+        action="store_true",
+        default=False,
+        dest="tests_only",
+        help="Only print lines that have at least one test associated; "
+             "files where no line passes this filter are omitted entirely",
+    )
+    p_debug_source.add_argument(
+        "--files-only",
+        action="store_true",
+        default=False,
+        dest="files_only",
+        help="Print only the file paths that have at least one line with test coverage; "
+             "no line details are shown",
+    )
+    p_debug_summary = debug_sub.add_parser(
+        "summary",
+        help="Show file counts and first-level folder breakdown for the covtest data",
+    )
+    p_debug_summary.add_argument(
+        "path",
+        nargs="?",
+        type=Path,
+        help="Project directory (defaults to current directory)",
+    )
+    p_debug_summary.add_argument(
+        "--raw-coverage",
+        action="store_true",
+        default=False,
+        dest="raw_coverage",
+        help="Read directly from the .coverage DB instead of the covtest snapshot",
+    )
+
     _add_verbosity_args(p_debug, add_defaults=False)
     _add_verbosity_args(p_debug_source, add_defaults=False)
+    _add_verbosity_args(p_debug_summary, add_defaults=False)
 
     return parser.parse_args(argv)
 

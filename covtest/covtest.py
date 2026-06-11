@@ -13,7 +13,7 @@ from covtest.errors import CovTestException
 from covtest.import_graph import get_all_sources_by_file, build_import_graph
 from covtest.util.git import git_commits, git_diff, git_dirty
 from covtest.output import out_verbose, out_info
-from covtest.util.files import load, chdir, save
+from covtest.util.files import load, save
 
 COVTEST_FOLDER = ".covtest"
 
@@ -41,15 +41,28 @@ def extract_coverage(folder):
     file = os.path.join(folder, ".coverage")
     if not os.path.isfile(file):
         raise CovTestException(f"Coverage file {file} not found")
-    cov = coverage.CoverageData()
-    with chdir(folder):
-        cov.read()
+    cov = coverage.CoverageData(basename=file)
+    cov.read()
     result = {}
+    real_folder = os.path.realpath(folder)
 
     for f in cov.measured_files():
+        real_f = os.path.realpath(f)
+        # Skip files that are not physically inside the project folder.
+        # This excludes stdlib, globally-installed packages, and any other
+        # paths that happen to be measured but cannot be part of this project.
+        if not real_f.startswith(real_folder + os.sep):
+            continue
+        rel = os.path.relpath(real_f, real_folder).replace("\\", "/")
+        # Skip virtual-environment packages.  All venv layouts (Windows and
+        # Unix) place installed packages under a directory named site-packages,
+        # so this single check covers .venv/Lib/site-packages/ (Windows),
+        # .venv/lib/python3.x/site-packages/ (Unix), and any custom venv name.
+        if "site-packages" in rel:
+            continue
+
         contexts = cov.contexts_by_lineno(f)
-        # print(f, contexts)
-        clean_contexts = {}  # for pytest
+        clean_contexts = {}
         for line, context in sorted(contexts.items()):
             def _parse_context(c):
                 parts = c.rsplit("|", 1)
@@ -58,8 +71,7 @@ def extract_coverage(folder):
             clean = [_parse_context(c) for c in context]
             clean = [c for c in clean if c]
             clean_contexts[line] = set(clean)
-        f = os.path.relpath(os.path.realpath(f), os.path.realpath(folder))
-        result[f.replace("\\", "/")] = clean_contexts
+        result[rel] = clean_contexts
     return result
 
 

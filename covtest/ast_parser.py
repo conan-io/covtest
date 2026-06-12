@@ -54,14 +54,8 @@ class _ParsedFileData:
                 elif isinstance(child, (ast.Import, ast.ImportFrom)):
                     pass  # parsed in another place
                 elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    endlineno = child.lineno
-                    for n in ast.iter_child_nodes(child):
-                        try:
-                            endlineno = n.lineno
-                            break
-                        except AttributeError:
-                            pass
-                    result[child.name] = list(range(child.lineno, endlineno+1))
+                    body_start = child.body[0].lineno if child.body else child.end_lineno + 1
+                    result[child.name] = list(range(child.lineno, body_start))
                     # Do not recurse into function/class bodies
                 else:
                     # Recurse into if/for/while/try/with to find nested assignments

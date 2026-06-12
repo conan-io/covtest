@@ -5,4 +5,4 @@ covtest.egg-info
 .claude
 benchmarks
 build
-
+.covtest

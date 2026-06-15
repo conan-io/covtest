@@ -196,7 +196,7 @@ def process(folder, covtest_file=None):
     out_info("tracing import-time lines ...")
     t = time.time()
     all_import_sources = get_all_sources_by_file(cov_data, parse_results, folder)
-    import_time_lines = build_import_graph(folder, all_import_sources)
+    import_time_lines = build_import_graph(folder, all_import_sources, parse_results)
     out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
 
     opened_files = os.path.join(folder, ".covtest", "file_open")

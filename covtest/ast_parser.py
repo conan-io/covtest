@@ -4,6 +4,33 @@ import os
 from covtest.util.files import load
 
 
+def _resolve_relative_dotpath(relf, level, module):
+    """Resolve a relative import to an absolute dotpath given the importing file's rel_path.
+
+    Examples::
+
+        _resolve_relative_dotpath("mypkg/__init__.py", 1, "sub")   → "mypkg.sub"
+        _resolve_relative_dotpath("mypkg/foo.py",      1, "bar")   → "mypkg.bar"
+        _resolve_relative_dotpath("a/b/__init__.py",   2, "utils") → "a.utils"
+        _resolve_relative_dotpath("mypkg/__init__.py", 1, None)    → "mypkg"  (bare from . import X)
+    """
+    relf = relf.replace("\\", "/")
+    if relf.endswith("/__init__.py"):
+        package = relf[: -len("/__init__.py")].replace("/", ".")
+    elif "/" in relf:
+        package = relf.rsplit("/", 1)[0].replace("/", ".")
+    else:
+        package = ""
+
+    parts = package.split(".") if package else []
+    base_parts = parts[: len(parts) - (level - 1)] if level > 1 else parts
+    base = ".".join(base_parts)
+
+    if module:
+        return f"{base}.{module}" if base else module
+    return base or None
+
+
 class ParsedData:
     def __init__(self, folder, py_files):
         """Parse only the .py files listed in *py_files* (relative paths, forward-slash
@@ -11,13 +38,13 @@ class ParsedData:
         self.files = {}
         for relf in py_files:
             absf = os.path.join(folder, relf.replace("/", os.sep))
-            self.files[relf] = _ParsedFileData(load(absf))
+            self.files[relf] = _ParsedFileData(load(absf), relf)
 
 
 class _ParsedFileData:
     """ results of parsing a code file
     """
-    def __init__(self, code):
+    def __init__(self, code, relf=""):
         rootnode = ast.parse(code)
         self.scopes = {}  # Mapping from line to the end line of the current scope (class, function)
 
@@ -32,7 +59,7 @@ class _ParsedFileData:
             if isinstance(node, ast.Name):
                 usage_names.setdefault(node.id, set()).add(node.lineno)
 
-        self.imports, self.import_sources, self.local_import_sources = self._parse_imports(rootnode)
+        self.imports, self.import_sources, self.local_import_sources = self._parse_imports(rootnode, relf)
         self.imports_usages = self._parse_usages(usage_names, self.imports)
         self.global_definitions = self._parse_globals_defs(rootnode)
         self.global_usages = self._parse_usages(usage_names, self.global_definitions)
@@ -65,12 +92,13 @@ class _ParsedFileData:
         return result
 
     @staticmethod
-    def _parse_imports(rootnode):
+    def _parse_imports(rootnode, relf=""):
         """Return (imports, import_sources, local_import_sources).
 
         imports:              {imported_name: [lines]}   e.g. "FockSpace" → [5]
         import_sources:       {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
                               Includes ALL imports (module-level + function-body).
+                              Relative imports are resolved to absolute dotpaths using relf.
         local_import_sources: {source_module: [lines]}
                               Function-body imports only — imports inside a ``def`` or
                               ``async def`` block.  Used for import-time projection so
@@ -97,12 +125,20 @@ class _ParsedFileData:
             if isinstance(node, (ast.ImportFrom, ast.Import)):
                 is_local = id(node) in _local_node_ids
                 for alias in node.names:
-                    # from X.Y import Z  →  src="X.Y", name="Z"
-                    # import X.Y         →  src="X.Y", name="X.Y"
-                    src = node.module if isinstance(node, ast.ImportFrom) else alias.name
+                    if isinstance(node, ast.ImportFrom):
+                        if node.level > 0:
+                            # Relative import: resolve to absolute dotpath.
+                            # "from . import X" (module=None) → src is the submodule "pkg.X"
+                            # "from .sub import X" (module="sub") → src is "pkg.sub"
+                            mod = node.module or alias.name
+                            src = _resolve_relative_dotpath(relf, node.level, mod) if relf else None
+                        else:
+                            src = node.module
+                    else:
+                        src = alias.name
                     for line in range(node.lineno, node.end_lineno + 1):
                         imports.setdefault(alias.name, []).append(line)
-                        if src:  # None only for bare relative: "from . import X"
+                        if src:
                             import_sources.setdefault(src, []).append(line)
                             if is_local:
                                 local_import_sources.setdefault(src, []).append(line)

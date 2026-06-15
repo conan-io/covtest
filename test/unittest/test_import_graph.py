@@ -1,3 +1,4 @@
+from covtest.ast_parser import ParsedData
 from covtest.import_graph import build_import_graph
 from test.e2e.client import TestClient
 
@@ -43,7 +44,8 @@ def test_build_import_graph_two_levels_with_call():
         ),
     })
 
-    result = build_import_graph(tc.cwd, {"test_pkg.py": ["pkg"]})
+    parse_results = ParsedData(tc.cwd, ["test_pkg.py", "pkg/__init__.py", "pkg/sub.py", "pkg/leaf.py"])
+    result = build_import_graph(tc.cwd, {"test_pkg.py": ["pkg"]}, parse_results)
 
     assert result == {
         "pkg": {

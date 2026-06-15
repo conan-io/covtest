@@ -1,27 +1,27 @@
 """Import-time line tracing for covtest.
 
 For each source-module dotpath that appears as an import source in any covered
-file, this module computes which lines execute when that module is imported
-from scratch (clean sys.modules).  CovTestData._extend_mappings uses the result
-to project test coverage through import chains that are invisible to direct
-line-coverage tracking (because Python caches modules in sys.modules — only
-the FIRST test that imports a given module sees its module-level lines).
+file, this module computes which lines execute when that module is imported.
+CovTestData._extend_mappings uses the result to project test coverage through
+import chains that are invisible to direct line-coverage tracking.
 
-Key design decisions
---------------------
-* **In-process, no subprocess**: imports run in the current interpreter via
-  importlib — no subprocess-spawn overhead.
-* **Module-level closure cache**: each dotpath is traced once; the result is
-  reused for every test that imports it.  Tracing cost is O(unique dotpaths),
-  not O(test files × imports per file).
-* **sys.modules restored after each trace**: so the next trace starts fresh.
-* **sys.settrace line filter**: only events from files under ``folder`` are
-  captured (stdlib/site-packages are dropped at trace time).
-* **Two-stage eviction with retry**: Stage 1 evicts only the dotpath's subtree
-  (cheap); Stage 2 (run only on Stage 1 failure) evicts the entire top-level
-  package and re-imports it fresh — handles cached-state conflicts like
-  RecursionError or class-layout errors that arise when re-importing a
-  subpackage with stale references in cached parents.
+Algorithm
+---------
+1. **Single monitoring pass** — all dotpaths are imported in one session with
+   the executed-line buffer cleared between each.  First-touched modules run
+   fresh and capture lines (including transitive deps); later imports of the
+   same already-cached module capture nothing.
+
+2. **Flat accumulation** — all raw windows are merged into a single
+   ``{rel_file: set(lines)}`` map.  Every file that executed during the trace
+   session ends up here, regardless of which dotpath's window captured it.
+
+3. **Import closure per dotpath** — for each dotpath D, BFS from D's source
+   file through ``import_sources`` (absolute and relative, pre-resolved by
+   ``ParsedData``), collecting every reachable file that appears in the flat
+   map.  Only files actually captured during tracing are included.
+
+No two-stage retry, no closure cache, no empty-window special cases.
 """
 
 import importlib
@@ -47,9 +47,7 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
         # which *directly execute* an import statement at run-time are projected
         # onto the imported module's lines.  Module-level imports run at collection
         # time and are often shared across many tests, leading to massive
-        # over-prediction when the transitive import chain is large (e.g. any
-        # Django test file that imports from django.db ends up attributing every
-        # test to django.utils.translation.trans_real).
+        # over-prediction when the transitive import chain is large.
         for dotpath, decl_lines in parsed_file_data.local_import_sources.items():
             if any(file_cov.get(line) for line in decl_lines):
                 all_import_sources.setdefault(f, []).append(dotpath)
@@ -59,222 +57,122 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
                 parts = dotpath.split(".")
                 for i in range(1, len(parts)):
                     ancestor = ".".join(parts[:i])
-                    if _is_project_dotpath(ancestor, folder):
+                    if _source_file(ancestor, folder) is not None:
                         all_import_sources.setdefault(f, []).append(ancestor)
     return all_import_sources
 
 
-def build_import_graph(folder, import_sources_by_file):
+def build_import_graph(folder, import_sources_by_file, parse_results):
     """Compute import-time line coverage for every dotpath found in test files.
 
     Parameters
     ----------
     folder : str
-        Absolute path to the project root.  Used both to filter line events to
-        only project files (anything under this folder) and to compute relative
-        paths in the result.
+        Absolute path to the project root.
     import_sources_by_file : dict[str, list[str]]
         {relative_file_path: [dotpath, …]} — collected from ParsedData.
+    parse_results : ParsedData
+        Pre-parsed AST data for all covered files; used by Pass 2 to resolve
+        import edges without re-reading source files.
 
     Returns
     -------
     dict[str, dict[str, set[int]]]
         {source_dotpath: {relative_file_path: set(lines)}}
-        Empty dict for dotpaths whose import failed or produced no project lines.
     """
     folder = os.path.realpath(folder)
 
-    # Deduplicate: collect every unique dotpath across all test files
     all_dotpaths = {
         dp
         for dotpaths in import_sources_by_file.values()
         for dp in dotpaths
+        if _source_file(dp, folder) is not None
     }
 
     out_info(f"tracing imports  : {len(all_dotpaths)} unique dotpaths from "
              f"{len(import_sources_by_file)} test files")
 
-    closure_cache = {}  # dotpath → {rel_path: set(lines)}
-    for dotpath in sorted(all_dotpaths):
-        _trace_module(dotpath, folder, closure_cache)
+    raw, _errors = _single_pass_trace(sorted(all_dotpaths), folder)
 
-    # Summary: how many dotpaths captured at least one project line.  Useful for
-    # spotting cases where a critical ancestor silently produced 0 lines (which
-    # would invisibly cripple recall).
-    n_with_lines = sum(1 for res in closure_cache.values() if res)
-    out_info(f"import_graph: {n_with_lines}/{len(closure_cache)} dotpaths produced lines")
+    file_lines_seen = defaultdict(set)
+    for dp_result in raw.values():
+        for rel_file, lines in dp_result.items():
+            file_lines_seen[rel_file].update(lines)
 
-    return closure_cache
+    result = _compute_import_closure(file_lines_seen, all_dotpaths, parse_results)
+
+    n_with_lines = sum(1 for res in result.values() if res)
+    out_info(f"import_graph: {n_with_lines}/{len(result)} dotpaths produced lines")
+
+    return result
 
 
-def _is_project_dotpath(dotpath, folder):
-    """Return True if *dotpath* plausibly maps to a source file under *folder*.
+def _source_file(dotpath, folder):
+    """Return abs path to dotpath's source file under folder, or None.
 
-    This pre-filter skips stdlib / site-packages dotpaths before we even touch
-    sys.modules, avoiding both the eviction cost and the settrace overhead.
+    Handles both plain modules (``a/b/c.py``) and packages (``a/b/__init__.py``).
+    Returns None for stdlib / site-packages dotpaths that have no source under folder.
     """
     parts = dotpath.replace(".", os.sep)
-    return (os.path.isfile(os.path.join(folder, parts + ".py")) or
-            os.path.isfile(os.path.join(folder, parts, "__init__.py")))
+    f = os.path.join(folder, parts + ".py")
+    if os.path.isfile(f):
+        return f
+    f = os.path.join(folder, parts, "__init__.py")
+    if os.path.isfile(f):
+        return f
+    return None
 
 
-def _trace_module(dotpath, folder, closure_cache):
-    """Trace one module import and cache the result.
+def _single_pass_trace(dotpaths, folder):
+    """One sys.monitoring session — import each dotpath with a fresh line buffer.
 
-    If *dotpath* is already in *closure_cache* this is a no-op.
-    On return, ``closure_cache[dotpath]`` is set (possibly to ``{}`` on failure).
+    The ``executed`` dict is cleared between dotpaths so each window captures
+    only lines that ran during that specific import call.  Modules already in
+    sys.modules are no-ops and produce empty windows — Pass 1 recovers them.
 
-    Strategy
-    --------
-    Two-stage attempt with progressively broader eviction:
-
-    1. **Stage 1 — local eviction**: evict ``dotpath`` and its subtree.  This
-       handles the common case where re-importing the package alone is enough.
-       Cheap (only a few modules re-run).
-
-    2. **Stage 2 — full top-level eviction**: if Stage 1 raises an exception
-       or captures zero lines, retry by also evicting the entire top-level
-       package subtree (e.g. evict all of ``sympy.*`` for a ``sympy.physics``
-       trace).  This bypasses cached-state conflicts (RecursionError, TypeError
-       on class layout, etc.) at the cost of re-importing the whole top-level
-       package from scratch — slow but correct.  The result is memoized so
-       the cost is paid only once per dotpath.
-    """
-    if dotpath in closure_cache:
-        return
-
-    # Pre-filter: if dotpath has no corresponding source file under folder,
-    # it is a stdlib / site-packages module whose lines we can never project.
-    if not _is_project_dotpath(dotpath, folder):
-        closure_cache[dotpath] = {}
-        return
-
-    # --- Stage 1: local eviction (cheap) --------------------------------------
-    result = _attempt_trace(
-        dotpath, folder,
-        evict_keys={dotpath} | {k for k in sys.modules if k.startswith(dotpath + ".")},
-    )
-    if result.get("ok") and result["n_lines"] > 0:
-        closure_cache[dotpath] = result["lines"]
-        out_verbose(f"import_graph: traced '{dotpath}' → "
-                    f"{len(result['lines'])} files, {result['n_lines']} lines")
-        return
-
-    # --- Decision: should we do the expensive Stage 2 retry? -----------------
-    # Skip Stage 2 only for DEEP subpackages (depth > 2) where a shorter
-    # ancestor already has substantial data.  Top-level subpackages (depth 2,
-    # e.g. "sympy.physics") are where the deep import chains LIVE — skipping
-    # them would miss the lines they uniquely trigger (such as the si.py →
-    # numbers.py:1457 chain reached only when sympy.physics is fully re-imported).
-    parts = dotpath.split(".")
-    if len(parts) > 2:
-        for depth in range(len(parts) - 1, 1, -1):  # skip top-level ancestor
-            ancestor = ".".join(parts[:depth])
-            anc_lines = closure_cache.get(ancestor)
-            # Require ancestor to have substantial data — at least 50 files
-            # captured — otherwise it's likely a thin trace that won't cover
-            # what we'd capture with our own retry.
-            if anc_lines and len(anc_lines) >= 50:
-                closure_cache[dotpath] = result.get("lines", {})
-                out_verbose(f"import_graph: '{dotpath}' Stage 1 failed; ancestor "
-                            f"'{ancestor}' has {len(anc_lines)} files, skipping Stage 2")
-                return
-
-    # --- Stage 2: full top-level eviction (expensive fallback) ----------------
-    top_level = parts[0]
-    if top_level == dotpath:
-        # Already a top-level package — Stage 1 already evicted everything we can.
-        # No point retrying with the same eviction set.
-        closure_cache[dotpath] = result.get("lines", {})
-        n = result.get("n_lines", 0)
-        if n == 0:
-            out_info(f"import_graph: WARNING — '{dotpath}' produced 0 lines after "
-                     f"local eviction; reason: {result.get('error', 'no project lines')}")
-        return
-
-    out_info(f"import_graph: '{dotpath}' Stage 1 failed "
-             f"({result.get('error', '0 lines')}); retrying with full '{top_level}' eviction")
-    result2 = _attempt_trace(
-        dotpath, folder,
-        evict_keys={top_level} | {k for k in sys.modules if k.startswith(top_level + ".")},
-    )
-    closure_cache[dotpath] = result2.get("lines", {})
-    if result2.get("ok") and result2["n_lines"] > 0:
-        out_info(f"import_graph: '{dotpath}' Stage 2 succeeded "
-                 f"({len(result2['lines'])} files, {result2['n_lines']} lines)")
-    else:
-        out_info(f"import_graph: WARNING — '{dotpath}' Stage 2 also failed "
-                 f"({result2.get('error', '0 lines')}); giving up")
-
-
-def trace_import(dotpath, folder):
-    """Trace a fresh import and return which project lines execute.
-
-    Convenience wrapper around :func:`_attempt_trace` intended for tests and
-    ad-hoc inspection.
+    All traced dotpaths (and their submodules) are evicted from sys.modules
+    before the loop so that the first import always runs fresh even when called
+    from inside a process that has already imported those modules (e.g. pytest).
+    sys.modules is restored to its original state after the trace.
 
     Parameters
     ----------
-    dotpath : str
-        Python module dotpath (e.g. ``"mypkg.sub"``).
+    dotpaths : list[str]
+        Dotpaths to import, in order.
     folder : str
-        Absolute path to the project root.  Only lines from files under this
-        directory are captured.
+        Realpath of the project root (already resolved by caller).
 
     Returns
     -------
-    dict[str, set[int]]
-        ``{relative_file_path: set_of_line_numbers}`` — the project lines that
-        executed when *dotpath* was imported from a clean state.
-        *dotpath* and its subtree are evicted from ``sys.modules`` before the
-        trace; the original state is restored afterwards.
-    """
-    folder = os.path.realpath(folder)
-    evict_keys = {dotpath} | {k for k in sys.modules if k.startswith(dotpath + ".")}
-    return _attempt_trace(dotpath, folder, evict_keys)["lines"]
-
-
-def _run_trace(dotpath, folder):
-    """Core tracing mechanism using sys.monitoring (Python ≥ 3.12).
-
-    Adds *folder* to ``sys.path`` for the duration of the import so the module
-    can be found.  Does **not** touch ``sys.modules`` — no eviction before, no
-    restoration after.  The caller owns that lifecycle.
-
-    Unlike the legacy ``sys.settrace`` approach, ``sys.monitoring`` callbacks
-    are dispatched by the interpreter's monitoring layer without incrementing
-    the C-level recursion counter, so no ``setrecursionlimit`` bump is needed.
-
-    Returning ``sys.monitoring.DISABLE`` for non-project code objects is a
-    bonus optimisation: after the first LINE event from a function that lives
-    outside *folder*, Python stops firing callbacks for that code object
-    entirely — making the hot path essentially free for stdlib/site-packages.
-
-    Returns
-    -------
-    tuple[dict[str, set[int]], str | None]
-        ``(lines_map, error)`` where *lines_map* is ``{rel_path: set(linenos)}``
-        for project files only, and *error* is an exception description string
-        (or ``None`` when the import succeeded).
+    tuple[dict, dict]
+        ``(raw, errors)`` where raw is ``{dotpath: {rel_file: set(lines)}}``
+        and errors is ``{dotpath: error_string}`` for failed imports.
     """
     folder_norm = os.path.normcase(folder) + os.sep
-    executed = defaultdict(set)  # abs_filename → {linenos}
-    normcase = os.path.normcase
-    _norm = {}  # co_filename → True/False (under folder?)
+    _norm = {}   # co_filename → rel_path (str) if under folder, False otherwise
+    executed = {}
 
     def _line_handler(code, line_number):
         fn = code.co_filename
-        under = _norm.get(fn)
-        if under is None:
-            under = normcase(fn).startswith(folder_norm)
-            _norm[fn] = under
-        if not under:
-            return sys.monitoring.DISABLE  # silence this code object forever
-        executed[fn].add(line_number)
+        rel = _norm.get(fn)
+        if rel is None:
+            fn_norm = os.path.normcase(fn)
+            if fn_norm.startswith(folder_norm) and "site-packages" not in fn_norm:
+                rel = os.path.relpath(fn, folder).replace("\\", "/")
+            else:
+                rel = False
+            _norm[fn] = rel
+        if not rel:
+            return sys.monitoring.DISABLE
+        executed.setdefault(rel, set()).add(line_number)
 
-    # Claim the first free monitoring tool slot (IDs 0-5).
-    # COVERAGE_ID (2) is the semantically appropriate choice; fall back to the
-    # generic free IDs (3, 4) if something else already holds it.
+    # Evict traced dotpaths so each importlib.import_module runs fresh even
+    # when called from inside a process (e.g. pytest) that already imported them.
+    evict_keys = {k for k in sys.modules
+                  for dp in dotpaths
+                  if k == dp or k.startswith(dp + ".")}
+    saved = {k: sys.modules.pop(k) for k in list(evict_keys)}
+
     tool_id = None
     for tid in (sys.monitoring.COVERAGE_ID, 3, 4,
                 sys.monitoring.PROFILER_ID, sys.monitoring.DEBUGGER_ID,
@@ -284,66 +182,71 @@ def _run_trace(dotpath, folder):
             tool_id = tid
             break
     if tool_id is None:
+        sys.modules.update(saved)
         raise RuntimeError("No free sys.monitoring tool ID available")
 
     sys.monitoring.register_callback(tool_id, sys.monitoring.events.LINE, _line_handler)
     sys.monitoring.set_events(tool_id, sys.monitoring.events.LINE)
     sys.path.insert(0, folder)
-    error = None
+    raw = {}
+    errors = {}
     try:
-        importlib.import_module(dotpath)
-    except BaseException as exc:  # includes RecursionError, KeyboardInterrupt
-        error = f"{type(exc).__name__}: {exc}"
+        for dotpath in dotpaths:
+            executed.clear()
+            try:
+                importlib.import_module(dotpath)
+            except BaseException as exc:
+                errors[dotpath] = f"{type(exc).__name__}: {exc}"
+            raw[dotpath] = dict(executed)
     finally:
         sys.path.remove(folder)
         sys.monitoring.set_events(tool_id, 0)
         sys.monitoring.register_callback(tool_id, sys.monitoring.events.LINE, None)
         sys.monitoring.free_tool_id(tool_id)
+        # Remove newly imported traced modules, restore originals.
+        for key in list(sys.modules):
+            for dp in dotpaths:
+                if key == dp or key.startswith(dp + "."):
+                    del sys.modules[key]
+                    break
+        sys.modules.update(saved)
 
-    folder_prefix = folder + os.sep
-    lines_map = {}
-    for abs_path, lines in executed.items():
-        real_path = os.path.realpath(abs_path)
-        if not real_path.startswith(folder_prefix):
-            continue
-        rel = os.path.relpath(real_path, folder).replace("\\", "/")
-        lines_map[rel] = lines
-
-    return lines_map, error
+    return raw, errors
 
 
-def _attempt_trace(dotpath, folder, evict_keys):
-    """Evict *evict_keys* from sys.modules, run :func:`_run_trace`, then restore.
+def _compute_import_closure(file_lines_seen, all_dotpaths, parse_results):
+    """For each dotpath, BFS through imports to collect all reachable captured files.
 
-    Returns a dict with keys:
-        ok       : bool — whether import_module raised no exception
-        n_lines  : int  — total project lines captured
-        lines    : dict[rel_path, set[int]] — captured line map
-        error    : str  — present only when ok is False
+    Starts from the dotpath's own source file and follows ``import_sources``
+    edges, only visiting files present in ``file_lines_seen``.  This works for
+    both fresh-traced and cached dotpaths: even a module whose own trace window
+    was empty has its source file in ``file_lines_seen`` (captured by whichever
+    dotpath imported it first).
+
+    Returns
+    -------
+    dict[str, dict[str, set[int]]]
+        ``{dotpath: {rel_file: set(lines)}}``
     """
-    # Evict and remember originals so sys.modules can be restored afterwards.
-    evicted = {}
-    for key in evict_keys:
-        module = sys.modules.pop(key, None)
-        if module is not None:
-            evicted[key] = module
-
-    lines_map, error = _run_trace(dotpath, folder)
-
-    # Remove anything added during the trace that belongs to the evicted set,
-    # then reinstate the originals.
-    for key in list(sys.modules):
-        if key in evicted:
-            continue  # reinstated below
-        if any(key == ek or key.startswith(ek + ".") for ek in evict_keys):
-            del sys.modules[key]
-    sys.modules.update(evicted)
-
-    result = {
-        "ok": error is None,
-        "n_lines": sum(len(v) for v in lines_map.values()),
-        "lines": lines_map,
-    }
-    if error is not None:
-        result["error"] = error
+    result = {}
+    for dp in all_dotpaths:
+        prefix = dp.replace(".", "/")
+        visited = set()
+        queue = [rel for rel in (prefix + ".py", prefix + "/__init__.py")
+                 if rel in file_lines_seen]
+        while queue:
+            rel_file = queue.pop()
+            if rel_file in visited:
+                continue
+            visited.add(rel_file)
+            parsed = parse_results.files.get(rel_file)
+            if parsed is None:
+                continue
+            for imp_dp in parsed.import_sources:
+                for suffix in (".py", "/__init__.py"):
+                    imp_rel = imp_dp.replace(".", "/") + suffix
+                    if imp_rel in file_lines_seen and imp_rel not in visited:
+                        queue.append(imp_rel)
+        result[dp] = {f: set(file_lines_seen[f]) for f in visited}
     return result
+

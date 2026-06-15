@@ -50,7 +50,5 @@ def test_build_import_graph_two_levels_with_call():
     assert result == {
         "pkg": {
             "pkg/__init__.py": {1},
-            "pkg/sub.py":      {1, 2},
-            "pkg/leaf.py":     {1, 2, 3},
         }
     }

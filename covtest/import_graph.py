@@ -39,26 +39,28 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
     # declaration lines has direct test attribution — dotpaths whose lines are
     # only covered at collection time (empty test set) produce no projection.
     all_import_sources = {}
+    print("GETTING ALL SOURCES")
     for f, file_cov in cov_data.items():
+        print("   FILE", f, file_cov)
         parsed_file_data = parse_results.files.get(f)
         if parsed_file_data is None:
             continue
+        print("   PARSED FILE", f, parsed_file_data.import_sources)
         # Use local_import_sources (function-body imports only) so that only tests
         # which *directly execute* an import statement at run-time are projected
         # onto the imported module's lines.  Module-level imports run at collection
         # time and are often shared across many tests, leading to massive
         # over-prediction when the transitive import chain is large.
-        for dotpath, decl_lines in parsed_file_data.local_import_sources.items():
-            if any(file_cov.get(line) for line in decl_lines):
-                all_import_sources.setdefault(f, []).append(dotpath)
-                # Also include every ancestor package so that the transitive
-                # import chain (e.g. physics/__init__ → units → si.py) gets
-                # traced even when only a deep leaf is imported directly.
-                parts = dotpath.split(".")
-                for i in range(1, len(parts)):
-                    ancestor = ".".join(parts[:i])
-                    if _source_file(ancestor, folder) is not None:
-                        all_import_sources.setdefault(f, []).append(ancestor)
+        for dotpath, decl_lines in parsed_file_data.import_sources.items():
+            all_import_sources.setdefault(f, []).append(dotpath)
+            # Also include every ancestor package so that the transitive
+            # import chain (e.g. physics/__init__ → units → si.py) gets
+            # traced even when only a deep leaf is imported directly.
+            parts = dotpath.split(".")
+            for i in range(1, len(parts)):
+                ancestor = ".".join(parts[:i])
+                if _source_file(ancestor, folder) is not None:
+                    all_import_sources.setdefault(f, []).append(ancestor)
     return all_import_sources
 
 
@@ -215,13 +217,7 @@ def _single_pass_trace(dotpaths, folder):
 
 
 def _compute_import_closure(file_lines_seen, all_dotpaths, parse_results):
-    """For each dotpath, BFS through imports to collect all reachable captured files.
-
-    Starts from the dotpath's own source file and follows ``import_sources``
-    edges, only visiting files present in ``file_lines_seen``.  This works for
-    both fresh-traced and cached dotpaths: even a module whose own trace window
-    was empty has its source file in ``file_lines_seen`` (captured by whichever
-    dotpath imported it first).
+    """For each dotpath, return only its own source file's captured lines.
 
     Returns
     -------
@@ -231,22 +227,11 @@ def _compute_import_closure(file_lines_seen, all_dotpaths, parse_results):
     result = {}
     for dp in all_dotpaths:
         prefix = dp.replace(".", "/")
-        visited = set()
-        queue = [rel for rel in (prefix + ".py", prefix + "/__init__.py")
-                 if rel in file_lines_seen]
-        while queue:
-            rel_file = queue.pop()
-            if rel_file in visited:
-                continue
-            visited.add(rel_file)
-            parsed = parse_results.files.get(rel_file)
-            if parsed is None:
-                continue
-            for imp_dp in parsed.import_sources:
-                for suffix in (".py", "/__init__.py"):
-                    imp_rel = imp_dp.replace(".", "/") + suffix
-                    if imp_rel in file_lines_seen and imp_rel not in visited:
-                        queue.append(imp_rel)
-        result[dp] = {f: set(file_lines_seen[f]) for f in visited}
+        own = {}
+        for suffix in (".py", "/__init__.py"):
+            rel = prefix + suffix
+            if rel in file_lines_seen:
+                own[rel] = set(file_lines_seen[rel])
+        result[dp] = own
     return result
 

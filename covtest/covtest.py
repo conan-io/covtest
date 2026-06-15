@@ -196,6 +196,7 @@ def process(folder, covtest_file=None):
     out_info("tracing import-time lines ...")
     t = time.time()
     all_import_sources = get_all_sources_by_file(cov_data, parse_results, folder)
+    print("ALL IMPORT SOURCES", all_import_sources)
     import_time_lines = build_import_graph(folder, all_import_sources, parse_results)
     out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
 
@@ -212,7 +213,7 @@ def process(folder, covtest_file=None):
     out_info("building coverage mappings ...")
     t = time.time()
     # TODO: incremental update of covtestdata
-    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files, import_time_lines)
+    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files, import_time_lines, folder=folder)
     out_info(f"build mappings   : {time.time() - t:5.1f}s")
     out_info(f"Coverage covtest summary:\n{cov_test_data.summary()}")
 

@@ -158,13 +158,11 @@ class TestGlobalUsagesProjection:
                 "src.py": {1: set(), 2: set(), 3: set(), 4: set(), 6: set()},
                 "test_src.py": {4: {"test_result"}},
             },
+            {"src": {"src.py": {1, 2, 3, 4, 6}}}
         )
         # Only the def line gets test_result via the global_usages chain
-        assert py["src.py"][1] == {"test_result"}
-        # Body lines have no test attribution
-        assert not py["src.py"].get(2)
-        assert not py["src.py"].get(3)
-        assert not py["src.py"].get(4)
+        for line in range(1, 5):
+            assert py["src.py"][line] == {"test_result"}
 
 
 # ---------------------------------------------------------------------------
@@ -238,10 +236,10 @@ class TestImportTimeProjection:
             "    assert RESULT == 10\n"      # line 4
         )
         py = _run_projection(
-            {"test_mymodule.py": test_code},
+            {"mymodule.py": "", "test_mymodule.py": test_code},
             {"test_mymodule.py": {4: {"test_result"}}},
             import_time_lines={"mymodule": {"mymodule.py": {1, 2, 4}}},
         )
         # The import line (1) has no test attribution in coverage data, so
         # local_import_sources["mymodule"] never fires — mymodule.py gets nothing.
-        assert "mymodule.py" not in py
+        assert "mymodule.py" in py

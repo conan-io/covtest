@@ -46,24 +46,27 @@ class _ParsedFileData:
     """
     def __init__(self, code, relf=""):
         rootnode = ast.parse(code)
-        self.scopes = {}  # Mapping from line to the end line of the current scope (class, function)
-
-        self.usage_names = {}
-
-        for node in ast.walk(rootnode):
-            start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
-            if start is not None:
-                end = max(end, self.scopes.get(start, 0))
-                if start < end:
-                    self.scopes[start] = int(end)
-            if isinstance(node, ast.Name):
-                self.usage_names.setdefault(node.id, set()).add(node.lineno)
-
+        # Mapping from line to the end line of the current scope (class, function)
+        self.scopes, self.usage_names = self._get_usages(rootnode)
         self.imports, self.import_sources = self._parse_imports(rootnode, relf)
         self.imports_usages = self._parse_usages(self.usage_names, self.imports)
         self.global_objects, self.global_declarations, self.global_calls = self._parse_globals_defs(rootnode)
         all_globals = {**self.global_objects, **self.global_declarations}
         self.global_usages = self._parse_usages(self.usage_names, all_globals)
+
+    @staticmethod
+    def _get_usages(rootnode):
+        usage_names = {}
+        scopes = {}
+        for node in ast.walk(rootnode):
+            start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
+            if start is not None:
+                end = max(end, scopes.get(start, 0))
+                if start < end:
+                    scopes[start] = int(end)
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                usage_names.setdefault(node.id, set()).add(node.lineno)
+        return scopes, usage_names
 
     @staticmethod
     def _parse_globals_defs(rootnode):

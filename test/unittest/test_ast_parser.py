@@ -13,6 +13,7 @@ def test_parse_globals_defs_bare_expression():
     parsed = _ParsedFileData(src)
     assert parsed.global_objects == {"x": [3]}
     assert parsed.global_declarations == {}
+    assert parsed.global_calls == {"print": [2]}
 
 
 def test_parse_globals_defs_annotated_assign():
@@ -22,8 +23,9 @@ def test_parse_globals_defs_annotated_assign():
         y = 10
         """)
     parsed = _ParsedFileData(src)
-    assert "y" in parsed.global_objects
-    assert "x" in parsed.global_objects
+    assert parsed.global_objects == {"x": [1], "y": [2]}
+    assert parsed.global_declarations == {}
+    assert parsed.global_calls == {}
 
 
 def test_parse_globals_defs_if_statement():
@@ -34,8 +36,9 @@ def test_parse_globals_defs_if_statement():
         x = 1
         """)
     parsed = _ParsedFileData(src)
-    assert "x" in parsed.global_objects
-    assert "y" in parsed.global_objects
+    assert parsed.global_objects == {"y": [2], "x": [3]}
+    assert parsed.global_declarations == {}
+    assert parsed.global_calls == {}
 
 
 def test_parse_globals_function_call():
@@ -63,31 +66,26 @@ def test_parse_globals_defs_functions_and_classes():
         x = 1
         """)
     parsed = _ParsedFileData(src)
-    assert "my_func" in parsed.global_declarations
-    assert "MyClass" in parsed.global_declarations
-    assert "x" in parsed.global_objects
-    # No cross-contamination
-    assert "my_func" not in parsed.global_objects
-    assert "MyClass" not in parsed.global_objects
-    assert "x" not in parsed.global_declarations
+    # declarations record only up to (not including) the first body line
+    assert parsed.global_declarations == {"my_func": [1], "MyClass": [4]}
+    assert parsed.global_objects == {"x": [7]}
+    assert parsed.global_calls == {}
 
 
 def test_parse_globals_defs_non_name_assign_target():
-    """_ParsedFileData must not raise when a module-level assignment has a target
-    without an '.id' attribute (e.g. tuple unpacking, subscript, attribute).
-    """
+    """Tuple-unpacking targets are walked to extract individual names."""
     src = textwrap.dedent("""\
         a, b = 1, 2
         x = 10
         """)
     parsed = _ParsedFileData(src)
-    assert "x" in parsed.global_objects
-    assert "a" in parsed.global_objects
-    assert "b" in parsed.global_objects
+    assert parsed.global_objects == {"a": [1], "b": [1], "x": [2]}
+    assert parsed.global_declarations == {}
+    assert parsed.global_calls == {}
 
 
 def test_global_objects_vs_declarations_separation():
-    """Async functions and classes are declarations; assignments are objects."""
+    """Async functions and classes are declarations; assignments are objects; imports appear in neither."""
     src = textwrap.dedent("""\
         import os
         CONSTANT = 42
@@ -103,17 +101,13 @@ def test_global_objects_vs_declarations_separation():
             pass
         """)
     parsed = _ParsedFileData(src)
-    assert "CONSTANT" in parsed.global_objects
-    assert "value" in parsed.global_objects
-    assert "sync_fn" in parsed.global_declarations
-    assert "async_fn" in parsed.global_declarations
-    assert "MyClass" in parsed.global_declarations
-    assert "CONSTANT" not in parsed.global_declarations
-    assert "sync_fn" not in parsed.global_objects
+    assert parsed.global_objects == {"CONSTANT": [2], "value": [3]}
+    assert parsed.global_declarations == {"sync_fn": [5], "async_fn": [8], "MyClass": [11]}
+    assert parsed.global_calls == {}
 
 
 def test_usage_names_attribute():
-    """usage_names is a public attribute mapping name → set of line numbers."""
+    """usage_names tracks only Load contexts (reads), not Store (assignment targets)."""
     src = textwrap.dedent("""\
         x = 1
         y = x + 1
@@ -121,9 +115,86 @@ def test_usage_names_attribute():
         """)
     parsed = _ParsedFileData(src)
     assert isinstance(parsed.usage_names, dict)
-    assert 2 in parsed.usage_names["x"]
-    assert 3 in parsed.usage_names["x"]
-    assert 3 in parsed.usage_names["y"]
+    # x assigned on line 1 (Store, not tracked), read on lines 2 and 3
+    assert parsed.usage_names["x"] == {2, 3}
+    # y assigned on line 2 (Store, not tracked), read on line 3
+    assert parsed.usage_names["y"] == {3}
+    # z is only ever assigned (Store), never read — absent from usage_names
+    assert "z" not in parsed.usage_names
+
+
+def test_usage_names_inside_function_body():
+    """Names used inside a function body are tracked at the correct line numbers.
+    Function parameters are ast.arg nodes, not ast.Name, so they only appear
+    in usage_names when referenced in the body — not at the def line."""
+    src = textwrap.dedent("""\
+        BASE = 10
+
+        def compute(n):
+            result = n + BASE
+            return result
+        """)
+    #                  line 1: BASE assigned (Store, not tracked)
+    #                  line 3: n is ast.arg — not an ast.Name node at all
+    #                  line 4: n (Load) → tracked, BASE (Load) → tracked, result (Store, not tracked)
+    #                  line 5: result (Load) → tracked
+    parsed = _ParsedFileData(src)
+    assert parsed.usage_names["BASE"] == {4}
+    assert parsed.usage_names["n"] == {4}
+    assert parsed.usage_names["result"] == {5}
+
+
+def test_usage_names_inside_class_method():
+    """Names referenced inside a class body and nested method bodies are all tracked.
+    Demonstrates two levels of nesting (module → class body → method body)."""
+    src = textwrap.dedent("""\
+        SCALE = 5
+
+        class Scaler:
+            base = SCALE * 2
+
+            def apply(self, x):
+                return x * SCALE
+        """)
+    parsed = _ParsedFileData(src)
+    assert parsed.usage_names == {"SCALE": {4, 7}, "x": {7}}
+    assert parsed.global_objects == {"SCALE": [1]}
+
+
+def test_usage_names_same_name_across_scopes():
+    """A name used at module level, inside a function, and inside a class body
+    accumulates all line numbers into a single set — scopes are not separated."""
+    src = textwrap.dedent("""\
+        count = 0
+
+        def inc():
+            x = count + 1
+            return x
+
+        class C:
+            start = count
+        """)
+    #   line 1: count assigned (Store, not tracked)
+    #   line 4: count (Load) → tracked
+    #   line 8: count (Load) → tracked
+    parsed = _ParsedFileData(src)
+    assert parsed.usage_names["count"] == {4, 8}
+
+
+def test_usage_names_multiple_names_on_same_line():
+    """Several distinct names appearing on a single expression line are each
+    recorded with that line in their individual sets."""
+    src = textwrap.dedent("""\
+        a = 1
+        b = 2
+        c = 3
+        result = a + b + c
+        """)
+    #   line 4: a (Load), b (Load), c (Load) → tracked; result (Store) → not tracked
+    parsed = _ParsedFileData(src)
+    for name in ("a", "b", "c"):
+        assert 4 in parsed.usage_names[name], f"{name!r} missing line 4"
+    assert "result" not in parsed.usage_names
 
 
 def test_parse_imports_local():

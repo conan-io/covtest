@@ -48,7 +48,7 @@ class _ParsedFileData:
         rootnode = ast.parse(code)
         self.scopes = {}  # Mapping from line to the end line of the current scope (class, function)
 
-        usage_names = {}
+        self.usage_names = {}
 
         for node in ast.walk(rootnode):
             start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
@@ -57,16 +57,28 @@ class _ParsedFileData:
                 if start < end:
                     self.scopes[start] = int(end)
             if isinstance(node, ast.Name):
-                usage_names.setdefault(node.id, set()).add(node.lineno)
+                self.usage_names.setdefault(node.id, set()).add(node.lineno)
 
-        self.imports, self.import_sources, self.local_import_sources = self._parse_imports(rootnode, relf)
-        self.imports_usages = self._parse_usages(usage_names, self.imports)
-        self.global_definitions = self._parse_globals_defs(rootnode)
-        self.global_usages = self._parse_usages(usage_names, self.global_definitions)
+        self.imports, self.import_sources = self._parse_imports(rootnode, relf)
+        self.imports_usages = self._parse_usages(self.usage_names, self.imports)
+        self.global_objects, self.global_declarations, self.global_calls = self._parse_globals_defs(rootnode)
+        all_globals = {**self.global_objects, **self.global_declarations}
+        self.global_usages = self._parse_usages(self.usage_names, all_globals)
 
     @staticmethod
     def _parse_globals_defs(rootnode):
-        result = {}
+        """Return (global_objects, global_declarations, global_calls).
+
+        global_objects:      module-level variables, assignments, and annotated assignments —
+                             things that *execute* (run code) when the module is imported.
+        global_declarations: function and class definitions — things that only register
+                             a name at import time without executing their bodies.
+        global_calls:        module-level bare function calls not assigned to a name,
+                             e.g. ``compute()``; maps called name → lines.
+        """
+        objects = {}
+        declarations = {}
+        calls = {}
 
         def _collect(node):
             for child in ast.iter_child_nodes(node):
@@ -74,62 +86,43 @@ class _ParsedFileData:
                     for t in child.targets:
                         for name_node in (ast.walk(t) if not isinstance(t, ast.Name) else [t]):
                             if isinstance(name_node, ast.Name):
-                                result[name_node.id] = list(range(child.lineno, child.end_lineno+1))
+                                objects[name_node.id] = list(range(child.lineno, child.end_lineno+1))
                 elif isinstance(child, ast.AnnAssign):
                     if isinstance(child.target, ast.Name):
-                        result[child.target.id] = list(range(child.lineno, child.end_lineno+1))
+                        objects[child.target.id] = list(range(child.lineno, child.end_lineno+1))
                 elif isinstance(child, (ast.Import, ast.ImportFrom)):
                     pass  # parsed in another place
                 elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     body_start = child.body[0].lineno if child.body else child.end_lineno + 1
-                    result[child.name] = list(range(child.lineno, body_start))
+                    declarations[child.name] = list(range(child.lineno, body_start))
                     # Do not recurse into function/class bodies
+                elif isinstance(child, ast.Expr):
+                    if isinstance(child.value, ast.Call) and isinstance(child.value.func, ast.Name):
+                        calls[child.value.func.id] = list(range(child.lineno, child.end_lineno + 1))
                 else:
                     # Recurse into if/for/while/try/with to find nested assignments
                     _collect(child)
 
         _collect(rootnode)
-        return result
+        return objects, declarations, calls
 
     @staticmethod
     def _parse_imports(rootnode, relf=""):
-        """Return (imports, import_sources, local_import_sources).
+        """Return (imports, import_sources).
 
-        imports:              {imported_name: [lines]}   e.g. "FockSpace" → [5]
-        import_sources:       {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
-                              Includes ALL imports (module-level + function-body).
-                              Relative imports are resolved to absolute dotpaths using relf.
-        local_import_sources: {source_module: [lines]}
-                              Function-body imports only — imports inside a ``def`` or
-                              ``async def`` block.  Used for import-time projection so
-                              that only tests which *directly execute* an import statement
-                              (not every test in a file that has a module-level import)
-                              are projected onto the imported module's lines.
+        imports:        {imported_name: [lines]}   e.g. "FockSpace" → [5]
+        import_sources: {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
+                        Includes ALL imports (module-level + function-body).
+                        Relative imports are resolved to absolute dotpaths using relf.
         """
         imports = {}
         import_sources = {}
 
-        # Collect the AST node ids of every Import/ImportFrom that lives inside
-        # a function or async-function body.  Using object id() avoids a second
-        # full tree walk and is safe because all nodes exist for the lifetime of
-        # this call.
-        _local_node_ids: set = set()
-        for node in ast.walk(rootnode):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                for child in ast.walk(node):
-                    if isinstance(child, (ast.Import, ast.ImportFrom)):
-                        _local_node_ids.add(id(child))
-
-        local_import_sources = {}
         for node in ast.walk(rootnode):
             if isinstance(node, (ast.ImportFrom, ast.Import)):
-                is_local = id(node) in _local_node_ids
                 for alias in node.names:
                     if isinstance(node, ast.ImportFrom):
                         if node.level > 0:
-                            # Relative import: resolve to absolute dotpath.
-                            # "from . import X" (module=None) → src is the submodule "pkg.X"
-                            # "from .sub import X" (module="sub") → src is "pkg.sub"
                             mod = node.module or alias.name
                             src = _resolve_relative_dotpath(relf, node.level, mod) if relf else None
                         else:
@@ -140,9 +133,7 @@ class _ParsedFileData:
                         imports.setdefault(alias.name, []).append(line)
                         if src:
                             import_sources.setdefault(src, []).append(line)
-                            if is_local:
-                                local_import_sources.setdefault(src, []).append(line)
-        return imports, import_sources, local_import_sources
+        return imports, import_sources
 
     @staticmethod
     def _parse_usages(usage_names, defs):

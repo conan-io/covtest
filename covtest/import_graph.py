@@ -43,11 +43,6 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
         parsed_file_data = parse_results.files.get(f)
         if parsed_file_data is None:
             continue
-        # Use local_import_sources (function-body imports only) so that only tests
-        # which *directly execute* an import statement at run-time are projected
-        # onto the imported module's lines.  Module-level imports run at collection
-        # time and are often shared across many tests, leading to massive
-        # over-prediction when the transitive import chain is large.
         for dotpath, decl_lines in parsed_file_data.import_sources.items():
             all_import_sources.setdefault(f, []).append(dotpath)
             # Also include every ancestor package so that the transitive

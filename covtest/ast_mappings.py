@@ -82,7 +82,8 @@ def project_global_usages(file_cov_data, file_ast_data):
         updated = 0
         for name, usage_lines_ in file_ast_data.global_usages.items():
             tests_ = _collect_tests(file_cov_data, usage_lines_)
-            defined_lines = file_ast_data.global_definitions.get(name)
+            defined_lines = (file_ast_data.global_objects.get(name) or
+                             file_ast_data.global_declarations.get(name))
             updated += _propagate(file_cov_data, defined_lines, tests_)
 
 

@@ -3,7 +3,9 @@ import os
 
 import msgpack
 
-from covtest.ast_mappings import file_scopes_forward_projection, scopes_backward_projection, print_cov_data
+from covtest.ast_mappings import file_scopes_up_projection, print_cov_data, \
+    project_global_usages, project_imports_in_file, project_imports, \
+    file_scopes_down_projection, scopes_down_projection
 from covtest.errors import CovTestException
 
 
@@ -42,62 +44,21 @@ class CovTestData:
         return result
 
     def _extend_mappings(self, parse_data, import_time_lines, folder=None):
-
-        print("IMPORT TIME LINES!!!")
-        print(import_time_lines)
-
-        def _collect_tests(test_data_, lines_):
-            """Return the union of tests attributed to any of the given lines."""
-            if not lines_:
-                return None
-            result = set()
-            for line_ in lines_:
-                t = test_data_.get(line_)
-                if t:
-                    result.update(t)
-            return result
-
-        def _propagate(test_data_, lines_, tests_):
-            """Add *tests* to every line in *lines_*, creating entries as needed."""
-            if not lines_ or not tests_:
-                return 0
-            updated = 0
-            for line_ in lines_:
-                tests_to_update = test_data_.setdefault(line_, set())
-                old_lines = len(tests_to_update)
-                tests_to_update.update(tests_)
-                updated += len(tests_to_update) - old_lines
-            return updated
-
-        def _extend_global_usages(test_data_, parsed_file_data_):
-            updated = 1
-            while updated:
-                updated = 0
-                for name, usage_lines_ in parsed_file_data_.global_usages.items():
-                    tests_ = _collect_tests(test_data_, usage_lines_)
-                    defined_lines = parsed_file_data_.global_definitions.get(name)
-                    updated += _propagate(test_data_, defined_lines, tests_)
-
         print_cov_data(self.py_files, folder, "initial py_files (raw coverage)")
 
         for file, test_data in self.py_files.items():
             parsed_file_data = parse_data.files[file]
 
-            file_scopes_forward_projection(test_data, parsed_file_data)
+            file_scopes_up_projection(test_data, parsed_file_data)
 
             # 2nd projection, the used global objects within this file
-            _extend_global_usages(test_data, parsed_file_data)
+            project_global_usages(test_data, parsed_file_data)
 
             # 3rd projection: the imports
-            for import_name, import_declared_lines in parsed_file_data.imports.items():
-                # within this file
-                usage_lines = parsed_file_data.imports_usages.get(import_name)
-                import_tests = _collect_tests(test_data, usage_lines)
-                if not import_tests:
-                    continue
-                _propagate(test_data, import_declared_lines, import_tests)
+            project_imports_in_file(test_data, parsed_file_data)
 
-            file_scopes_forward_projection(test_data, parsed_file_data)
+            # Another pass, filling
+            file_scopes_down_projection(test_data, parsed_file_data)
 
         print_cov_data(self.py_files, folder, "after 1st pass (same file scopes + global_usages)")
 
@@ -108,51 +69,7 @@ class CovTestData:
         # This handles transitive chains through __init__.py re-exports and
         # import-time function calls that static AST analysis cannot see.
 
-        new_data = {}
-        print("PROJECTING IMPORTS!!!!!!")
-        for file, raw_test_data in self.py_files.items():
-            parsed_file_data = parse_data.files.get(file)
-            if parsed_file_data is None:
-                continue
-            print(f"  Projecting from file: {file}")
-            for dotpath, decl_lines in parsed_file_data.import_sources.items():
-                import_tests = _collect_tests(raw_test_data, decl_lines)
-                if not import_tests:
-                    continue  # import line not directly covered → skip
-
-                print(f"    Projecting from dotpath: {dotpath}: {decl_lines} Tests: {import_tests}")
-
-                # Project to every line executed when importing this dotpath,
-                # AND every ancestor package in the dotpath chain.
-                # e.g. for "sympy.physics.quantum.state", also include the
-                # import-time lines of "sympy.physics.quantum", "sympy.physics",
-                # and "sympy", because importing the leaf for the first time
-                # triggers all of those __init__.py files transitively.
-                parts = dotpath.split(".")
-                for depth in range(1, len(parts) + 1):
-                    ancestor = ".".join(parts[:depth])
-                    ancestor_data = import_time_lines.get(ancestor, {})
-                    print(f"  ancestor={ancestor!r}: {len(ancestor_data)} file(s) in import_time_lines")
-                    for target_file, lines in ancestor_data.items():
-                        print(f"    -> {target_file}: lines={sorted(lines)}")
-                        existing_file = self.py_files.get(target_file, {})
-                        target_file_data = new_data.setdefault(target_file, {})
-                        for line in lines:
-                            if not existing_file.get(line):
-                                target_file_data[line] = import_tests
-
-        print(f"\n=== DIAG 3rd pass: new_data accumulated ===")
-        for f, fd in sorted(new_data.items()):
-            print(f"  {f}:")
-            for ln, ts in sorted(fd.items()):
-                print(f"    line {ln:3d}: {sorted(ts)}")
-
-        # Merge accumulated data into py_files (done outside the loop to
-        # avoid mutating the dict while iterating over it)
-        for target_file, file_data in new_data.items():
-            existing = self.py_files.setdefault(target_file, {})
-            for line, tests in file_data.items():
-                existing.setdefault(line, set()).update(tests)
+        project_imports(self.py_files, parse_data, import_time_lines)
 
         print_cov_data(self.py_files, folder, "after 3rd pass (import-time projection merged)")
 
@@ -161,11 +78,11 @@ class CovTestData:
             parsed_file_data = parse_data.files.get(file)
             if parsed_file_data is None:
                 continue
-            _extend_global_usages(test_data, parsed_file_data)
+            project_global_usages(test_data, parsed_file_data)
 
         print_cov_data(self.py_files, folder, "Second extend global usages projection to complete after imports")
 
-        scopes_backward_projection(self.py_files, parse_data)
+        scopes_down_projection(self.py_files, parse_data)
 
         print_cov_data(self.py_files, folder, "Last pass (reverse scope projection)")
 

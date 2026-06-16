@@ -29,7 +29,7 @@ import os
 import sys
 from collections import defaultdict
 
-from covtest.output import out_verbose, out_info
+from covtest.output import out_info
 
 
 def get_all_sources_by_file(cov_data, parse_results, folder):
@@ -39,13 +39,10 @@ def get_all_sources_by_file(cov_data, parse_results, folder):
     # declaration lines has direct test attribution — dotpaths whose lines are
     # only covered at collection time (empty test set) produce no projection.
     all_import_sources = {}
-    print("GETTING ALL SOURCES")
     for f, file_cov in cov_data.items():
-        print("   FILE", f, file_cov)
         parsed_file_data = parse_results.files.get(f)
         if parsed_file_data is None:
             continue
-        print("   PARSED FILE", f, parsed_file_data.import_sources)
         # Use local_import_sources (function-body imports only) so that only tests
         # which *directly execute* an import statement at run-time are projected
         # onto the imported module's lines.  Module-level imports run at collection

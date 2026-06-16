@@ -237,6 +237,7 @@ def get_broken_tests(
     if timeout_per_test is not None:
         cmd += [f"--timeout={timeout_per_test}", "--timeout-method=thread"]
 
+    print("Running cmd to check broken tests", cmd)
     if os.path.exists(report_file):
         os.remove(report_file)
     try:
@@ -254,6 +255,7 @@ def get_broken_tests(
         raise Exception("Error: No report file found.")
     with open(report_file) as f:
         report = json.load(f)
+    print("Report:", json.dumps(report, indent=2))
     tests = report.get("tests", [])
     failed = {t["nodeid"] for t in tests if t["outcome"] in ("failed", "error")}
     total = len(tests)
@@ -283,7 +285,7 @@ def get_predicted_tests(repo_dir: str, venv_python: str) -> set:
         os.remove(tests_file)
 
     subprocess.run(
-        [venv_python, "-m", "covtest", "predict", "."],
+        [venv_python, "-m", "covtest", "predict", ".", "-vvv"],
         cwd=repo_dir,
         check=False,
     )

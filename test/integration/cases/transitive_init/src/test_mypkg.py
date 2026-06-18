@@ -7,12 +7,14 @@ def test_first():
 
 
 def test_leaf():
-    # By the time this runs, mypkg is cached (imported by test_first above).
-    # mypkg.leaf is a NEW import here, so leaf.py executes with test_leaf context.
-    # leaf.py:1  "from mypkg import RESULT"  →  raw_coverage test_leaf ✓
-    # But the import tracing for "mypkg" only evicts mypkg itself (not mypkg.sub),
-    # so sub.py never re-executes and helper.py:3 is NOT captured in the trace.
-    # Result: covtest misses test_leaf  ←  the false negative this case documents.
+    # By the time this runs, mypkg is cached (imported by test_first above), so
+    # helper.py:3 is NOT in this test's raw coverage.  The static projection
+    # threads attribution through the re-export chain down to the Helper class
+    # declaration, but cannot push it into compute()'s body: that body already
+    # carries test_first (from test_first's import), so the empty-body scope-down
+    # guard skips it, and there is no attribute/type tracking to know the value
+    # flows specifically through compute.  Result: covtest misses test_leaf —
+    # the false negative this case documents.
     from mypkg.leaf import LEAF_DATA
     assert LEAF_DATA == 3
 

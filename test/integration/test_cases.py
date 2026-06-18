@@ -126,15 +126,13 @@ def test_ancestor_chain(prepare_case, case):
     is mutated — even though state.py has no import from mypkg and the mypkg lines
     carry no direct test attribution (covered at collection time via module-level import).
 
-    This requires all three ancestor-chain fixes:
-      Fix 1 (covtest.py):      ancestor 'mypkg' is added to all_import_sources
-                                because the test's local import has test context.
-      Fix 2 (import_graph.py): 'mypkg.*' subtree is fully evicted during tracing so
-                                mypkg/__init__.py re-runs compute() and util.py:2 is
-                                captured in closure_cache['mypkg'].
-      Fix 3 (covtest_data.py): projection for 'mypkg.quantum.state' iterates the
-                                ancestor chain and applies closure_cache['mypkg'],
-                                attributing util.py:2 to test_state."""
+    The static projection (covtest/ast_mappings.py:project_imports) handles this:
+    the local import of 'mypkg.quantum.state' projects test_state onto the
+    import-time lines of each ancestor package — including mypkg/__init__.py's
+    'VALUE = compute(1, 2)'.  From there the within-file passes flow it through
+    'from .util import compute' to util.py's compute declaration, and scope-down
+    fills the (otherwise empty) compute body line — attributing util.py:2 to
+    test_state.  No module is imported at analysis time."""
     case_folder, base_commit = prepare_case("ancestor_chain")
     change_and_predict(case, case_folder, base_commit)
 
@@ -146,12 +144,16 @@ def test_transitive_init(prepare_case, case):
 
     This exercises the transitive-init chain:
         test imports mypkg.leaf
-        → mypkg/__init__.py calls compute() at import time
-        → compute() lives in mypkg/util.py  ← mutation target
+        → mypkg/__init__.py re-exports RESULT from mypkg.sub
+        → mypkg/sub.py computes RESULT = Helper().compute(1, 2) at import time
+        → Helper.compute lives in mypkg/helper.py  ← mutation target
 
-    The current import tracer only evicts the single target dotpath (mypkg.leaf),
-    so it misses the __init__.py → util.py chain.  This test documents that gap
-    and will pass once the tracer is extended to follow parent-package chains."""
+    The static projection threads attribution through the re-export chain down to
+    the Helper class declaration, but cannot reach compute()'s body: that body is
+    already attributed to test_first (it ran during test_first's import), so the
+    empty-body scope-down guard skips it, and there is no attribute/type tracking
+    to know the value flows specifically through compute.  This test documents that
+    remaining false negative (only test_first is predicted)."""
     case_folder, base_commit = prepare_case("transitive_init")
     change_and_predict(case, case_folder, base_commit)
 

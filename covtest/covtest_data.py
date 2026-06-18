@@ -5,7 +5,7 @@ import msgpack
 
 from covtest.ast_mappings import file_scopes_up_projection, print_cov_data, \
     project_global_usages, project_imports_in_file, project_imports, \
-    file_scopes_down_projection, scopes_down_projection
+    file_scopes_down_projection
 from covtest.errors import CovTestException
 
 
@@ -30,11 +30,14 @@ class CovTestData:
         result.append(f"Annotated tests: {len(all_tests)}")
         return "\n".join(result)
 
+    # Safety cap on the projection fixpoint — far above any real convergence depth.
+    _MAX_PROJECTION_ITERATIONS = 100
+
     @staticmethod
-    def create(coverage_data, parse_data, opened_files, import_time_lines, folder=None):
+    def create(coverage_data, parse_data, opened_files, folder=None):
         result = CovTestData()
         result.py_files = coverage_data
-        result._extend_mappings(parse_data, import_time_lines, folder=folder)
+        result._extend_mappings(parse_data, folder=folder)
         result.scopes = {f: {line: lines for line, lines in scope_data.scopes.items()}
                          for f, scope_data in parse_data.files.items()}
 
@@ -43,48 +46,47 @@ class CovTestData:
             result.data_files.setdefault(file.replace("\\", "/"), []).append(test)
         return result
 
-    def _extend_mappings(self, parse_data, import_time_lines, folder=None):
+    def _extend_mappings(self, parse_data, folder=None):
         print_cov_data(self.py_files, folder, "initial py_files (raw coverage)")
 
+        # Seed each definition line from the real coverage of its body (done once).
         for file, test_data in self.py_files.items():
             parsed_file_data = parse_data.files[file]
-
             file_scopes_up_projection(test_data, parsed_file_data)
 
-            # 2nd projection, the used global objects within this file
-            project_global_usages(test_data, parsed_file_data)
+        print_cov_data(self.py_files, folder, "after scopes-up seeding")
 
-            # 3rd projection: the imports
-            project_imports_in_file(test_data, parsed_file_data)
+        # Iterate the within-file projections and the static cross-file import
+        # projection to a fixpoint.  Each step returns the number of newly-added
+        # attributions; iterate until nothing new is propagated.
+        #
+        #   - project_global_usages:      usage line tests   → definition lines
+        #   - project_imports_in_file:    imported-name uses → import declaration
+        #   - file_scopes_down_projection: def-line tests    → empty body lines
+        #     (completes bodies of functions/classes that run only at import time)
+        #   - project_imports:            cross-file, per imported name + ancestors
+        for _ in range(self._MAX_PROJECTION_ITERATIONS):
+            delta = 0
+            for file, test_data in self.py_files.items():
+                parsed_file_data = parse_data.files.get(file)
+                if parsed_file_data is None:
+                    continue
+                for name, usage_lines_ in parsed_file_data.global_usages.items():
+                    if name == "urlencode":
+                        print("GLOBAL USAGE urlencode", file, " in lines", usage_lines_)
+                for name, usage_lines_ in parsed_file_data.imports_usages.items():
+                    if name == "urlencode":
+                        print("IMPORT USAGE urlencode", file, " in lines", usage_lines_)
+                delta += project_global_usages(test_data, parsed_file_data)
+                delta += project_imports_in_file(test_data, parsed_file_data)
+                delta += file_scopes_down_projection(test_data, parsed_file_data)
 
-            # Another pass, filling
-            file_scopes_down_projection(test_data, parsed_file_data)
+            delta += project_imports(self.py_files, parse_data)
 
-        print_cov_data(self.py_files, folder, "after 1st pass (same file scopes + global_usages)")
+            if not delta:
+                break
 
-        # Third pass: import-time line projection.
-        # For each import statement that has test coverage (the import line was
-        # executed during a test — true for function-body / local imports), project
-        # those tests onto every line that runs when the imported module is loaded.
-        # This handles transitive chains through __init__.py re-exports and
-        # import-time function calls that static AST analysis cannot see.
-
-        project_imports(self.py_files, parse_data, import_time_lines)
-
-        print_cov_data(self.py_files, folder, "after 3rd pass (import-time projection merged)")
-
-        # Re-project globals inside file to complete after import projections
-        for file, test_data in self.py_files.items():
-            parsed_file_data = parse_data.files.get(file)
-            if parsed_file_data is None:
-                continue
-            project_global_usages(test_data, parsed_file_data)
-
-        print_cov_data(self.py_files, folder, "Second extend global usages projection to complete after imports")
-
-        scopes_down_projection(self.py_files, parse_data)
-
-        print_cov_data(self.py_files, folder, "Last pass (reverse scope projection)")
+        print_cov_data(self.py_files, folder, "after projection fixpoint")
 
     def save(self, filepath):
         all_tests = set()

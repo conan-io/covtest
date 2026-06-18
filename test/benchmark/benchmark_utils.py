@@ -255,7 +255,6 @@ def get_broken_tests(
         raise Exception("Error: No report file found.")
     with open(report_file) as f:
         report = json.load(f)
-    print("Report:", json.dumps(report, indent=2))
     tests = report.get("tests", [])
     failed = {t["nodeid"] for t in tests if t["outcome"] in ("failed", "error")}
     total = len(tests)

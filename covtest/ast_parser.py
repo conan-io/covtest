@@ -48,7 +48,7 @@ class _ParsedFileData:
         rootnode = ast.parse(code)
         # Mapping from line to the end line of the current scope (class, function)
         self.scopes, self.usage_names = self._get_usages(rootnode)
-        self.imports, self.import_sources = self._parse_imports(rootnode, relf)
+        self.imports, self.import_sources, self.import_bindings = self._parse_imports(rootnode, relf)
         self.imports_usages = self._parse_usages(self.usage_names, self.imports)
         self.global_objects, self.global_declarations, self.global_calls = self._parse_globals_defs(rootnode)
         all_globals = {**self.global_objects, **self.global_declarations}
@@ -111,32 +111,53 @@ class _ParsedFileData:
 
     @staticmethod
     def _parse_imports(rootnode, relf=""):
-        """Return (imports, import_sources).
+        """Return (imports, import_sources, import_bindings).
 
         imports:        {imported_name: [lines]}   e.g. "FockSpace" → [5]
         import_sources: {source_module: [lines]}   e.g. "sympy.physics.quantum.hilbert" → [5]
                         Includes ALL imports (module-level + function-body).
                         Relative imports are resolved to absolute dotpaths using relf.
+        import_bindings: {bound_name: (dotpath, original_name, is_module_import, lines, sole_name)}
+                        One entry per name bound into the local namespace, keyed by the bound
+                        name (the alias if ``as`` is used, else the imported name).  Used by the
+                        cross-file projection to resolve each name to its source module and the
+                        original name defined there.
+                          - dotpath: source module dotpath (resolved for relative imports)
+                          - original_name: the name as defined in the source module
+                          - is_module_import: True for ``import M`` / ``import a.b`` (whole module)
+                          - lines: line range of the import statement
+                          - sole_name: True iff the statement binds exactly one name (enables the
+                            re-export rule without multi-name contamination)
         """
         imports = {}
         import_sources = {}
+        import_bindings = {}
 
         for node in ast.walk(rootnode):
             if isinstance(node, (ast.ImportFrom, ast.Import)):
+                lines = list(range(node.lineno, node.end_lineno + 1))
+                sole_name = len(node.names) == 1
                 for alias in node.names:
+                    is_module = isinstance(node, ast.Import)
                     if isinstance(node, ast.ImportFrom):
                         if node.level > 0:
                             mod = node.module or alias.name
                             src = _resolve_relative_dotpath(relf, node.level, mod) if relf else None
                         else:
                             src = node.module
+                        original_name = alias.name
                     else:
+                        # "import a.b.c" binds the top name "a"; "import a.b as c" binds "c".
                         src = alias.name
-                    for line in range(node.lineno, node.end_lineno + 1):
+                        original_name = alias.name
+                    bound_name = alias.asname or (alias.name.split(".")[0] if is_module else alias.name)
+                    for line in lines:
                         imports.setdefault(alias.name, []).append(line)
                         if src:
                             import_sources.setdefault(src, []).append(line)
-        return imports, import_sources
+                    if src:
+                        import_bindings[bound_name] = (src, original_name, is_module, lines, sole_name)
+        return imports, import_sources, import_bindings
 
     @staticmethod
     def _parse_usages(usage_names, defs):

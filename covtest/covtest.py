@@ -10,7 +10,6 @@ from covtest.covtest_data import CovTestData
 from covtest.ast_parser import ParsedData
 from covtest.diff import diff
 from covtest.errors import CovTestException
-from covtest.import_graph import get_all_sources_by_file, build_import_graph
 from covtest.util.git import git_commits, git_diff, git_dirty
 from covtest.output import out_verbose, out_info
 from covtest.util.files import load, save
@@ -193,12 +192,6 @@ def process(folder, covtest_file=None):
     parse_results = ParsedData(folder, cov_data.keys())
     out_info(f"parse sources    : {time.time() - t:5.1f}s  ({len(parse_results.files)} files)")
 
-    out_info("tracing import-time lines ...")
-    t = time.time()
-    all_import_sources = get_all_sources_by_file(cov_data, parse_results, folder)
-    import_time_lines = build_import_graph(folder, all_import_sources, parse_results)
-    out_info(f"trace imports    : {time.time() - t:5.1f}s  ({len(import_time_lines)} dotpaths traced)")
-
     opened_files = os.path.join(folder, ".covtest", "file_open")
     out_info("processing opened files")
     if os.path.exists(opened_files):
@@ -212,7 +205,7 @@ def process(folder, covtest_file=None):
     out_info("building coverage mappings ...")
     t = time.time()
     # TODO: incremental update of covtestdata
-    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files, import_time_lines, folder=folder)
+    cov_test_data = CovTestData.create(cov_data, parse_results, opened_files, folder=folder)
     out_info(f"build mappings   : {time.time() - t:5.1f}s")
     out_info(f"Coverage covtest summary:\n{cov_test_data.summary()}")
 

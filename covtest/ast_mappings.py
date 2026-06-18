@@ -16,23 +16,13 @@ def file_scopes_up_projection(file_cov_data, file_ast_data):
                 tests.update(lin_tests)
 
 
-def scopes_down_projection(cov_data, ast_data):
-    # Iterate all files
-    # extend class or function declaration only to its inner scope if the inner scope is
-    # completely empty (import-time exclusive execution)
-    # Reverse projection for import-time functions
-
-    for file, test_data in cov_data.items():
-        parsed_file_data = ast_data.files.get(file)
-        if parsed_file_data is None:
-            continue
-        file_scopes_down_projection(test_data, parsed_file_data)
-
-
 def file_scopes_down_projection(file_cov_data, file_ast_data):
     """ When a function or class declaration has tests information, but its inner
     scope is completely blank, it got it from import/global projection.
-    It can project those tests from the declaration to the inner scope
+    It can project those tests from the declaration to the inner scope.
+
+    Returns the number of newly-added (line, test) attributions so callers can
+    detect a fixpoint.
     """
     new_data = {}
     for line, tests in file_cov_data.items():
@@ -45,8 +35,11 @@ def file_scopes_down_projection(file_cov_data, file_ast_data):
                     assert not file_cov_data.get(ln_)
                     new_data[ln_] = tests
 
+    added = 0
     for k, v in new_data.items():
         file_cov_data[k] = v
+        added += len(v)
+    return added
 
 
 def _collect_tests(test_data_, lines_):
@@ -75,8 +68,11 @@ def _propagate(test_data_, lines_, tests_):
 
 
 def project_global_usages(file_cov_data, file_ast_data):
-    """ within the same file, project usages of globally declared things in the file
+    """ within the same file, project usages of globally declared things in the file.
+
+    Returns the total number of newly-added attributions across the inner fixpoint.
     """
+    total = 0
     updated = 1
     while updated:
         updated = 0
@@ -85,66 +81,108 @@ def project_global_usages(file_cov_data, file_ast_data):
             defined_lines = (file_ast_data.global_objects.get(name) or
                              file_ast_data.global_declarations.get(name))
             updated += _propagate(file_cov_data, defined_lines, tests_)
+        total += updated
+    return total
 
 
 def project_imports_in_file(file_cov_data, file_ast_data):
-    # 3rd projection: the imports
+    # 3rd projection: the imports. Returns the number of newly-added attributions.
+    added = 0
     for import_name, import_declared_lines in file_ast_data.imports.items():
         # within this file
         usage_lines = file_ast_data.imports_usages.get(import_name)
         import_tests = _collect_tests(file_cov_data, usage_lines)
         if not import_tests:
             continue
-        _propagate(file_cov_data, import_declared_lines, import_tests)
+        added += _propagate(file_cov_data, import_declared_lines, import_tests)
+    return added
 
 
-def project_imports(cov_data, ast_data, import_time_lines):
+def _module_relpath(dotpath, ast_data):
+    """Resolve a module dotpath to its relative file path in ast_data.files, or None.
 
-    # print("PROJECTING IMPORTS!!!!!!")
-    for _ in range(3):
-        new_data = {}
-        projected_new_tests = False
-        for file, raw_test_data in cov_data.items():
-            parsed_file_data = ast_data.files.get(file)
-            if parsed_file_data is None:
+    Tries the plain-module form (``a/b/c.py``) then the package form
+    (``a/b/c/__init__.py``).  Only files actually present in the parsed data are
+    returned — stdlib / third-party dotpaths resolve to None.
+    """
+    prefix = dotpath.replace(".", "/")
+    for candidate in (prefix + ".py", prefix + "/__init__.py"):
+        if candidate in ast_data.files:
+            return candidate
+    return None
+
+
+def import_time_lines(parsed_file_data):
+    """Lines of a file that execute when the module is imported.
+
+    Everything at module level — assignments, bare calls, import statements, and
+    def/class *header* lines — but NOT function/class bodies (those run only when
+    called).  Derived purely from the parsed AST data.
+    """
+    lines = set()
+    for mapping in (parsed_file_data.global_objects,
+                    parsed_file_data.global_calls,
+                    parsed_file_data.imports,
+                    parsed_file_data.global_declarations):
+        for decl_lines in mapping.values():
+            lines.update(decl_lines)
+    return lines
+
+
+def project_imports(cov_data, ast_data):
+    """Static cross-file projection — replaces dynamic import tracing.
+
+    For each imported name in each file, propagate the tests attributed to that
+    name's *usages* onto the name's definition in the source module, plus the
+    import-time lines of every ancestor package (importing a submodule runs each
+    ancestor ``__init__.py``).  Single-name import statements additionally follow
+    the import line's own tests, which threads attribution through pure re-export
+    chains.  Returns the number of newly-added attributions.
+    """
+    added = 0
+    # Snapshot source files: projecting may add new target files to cov_data, and
+    # those get processed on the next outer fixpoint iteration.
+    for file in list(cov_data):
+        file_cov = cov_data[file]
+        parsed_file_data = ast_data.files.get(file)
+        if parsed_file_data is None:
+            continue
+        for bound_name, binding in parsed_file_data.import_bindings.items():
+            dotpath, original_name, is_module, lines, sole_name = binding
+
+            # Per-name usage tests (contamination-free): tests on lines where the
+            # bound name is actually used.  usage_names is keyed by bare name.
+            tests = set(_collect_tests(file_cov, parsed_file_data.usage_names.get(bound_name)) or ())
+            if sole_name:
+                # Re-export rule: a statement binding a single name also carries the
+                # tests attributed to the import line itself, so attribution flows
+                # through ``from .sub import RESULT`` style re-exports.
+                tests |= set(_collect_tests(file_cov, lines) or ())
+            if not tests:
                 continue
-            # print(f"  Projecting from file: {file}")
-            for dotpath, decl_lines in parsed_file_data.import_sources.items():
-                import_tests = _collect_tests(raw_test_data, decl_lines)
-                if not import_tests:
-                    continue  # import line not directly covered → skip
 
-                # print(f"    Projecting from dotpath: {dotpath}: {decl_lines} Tests: {import_tests}")
+            # (a) precise target in the imported module
+            target_relpath = _module_relpath(dotpath, ast_data)
+            if target_relpath is not None:
+                target_pdata = ast_data.files[target_relpath]
+                if is_module:
+                    target_lines = import_time_lines(target_pdata)
+                else:
+                    target_lines = (list(target_pdata.global_objects.get(original_name, []))
+                                    + list(target_pdata.global_declarations.get(original_name, []))
+                                    + list(target_pdata.imports.get(original_name, [])))
+                added += _propagate(cov_data.setdefault(target_relpath, {}), target_lines, tests)
 
-                # Project to every line executed when importing this dotpath,
-                # AND every ancestor package in the dotpath chain.
-                # e.g. for "sympy.physics.quantum.state", also include the
-                # import-time lines of "sympy.physics.quantum", "sympy.physics",
-                # and "sympy", because importing the leaf for the first time
-                # triggers all of those __init__.py files transitively.
-                parts = dotpath.split(".")
-                for depth in range(1, len(parts) + 1):
-                    ancestor = ".".join(parts[:depth])
-                    ancestor_data = import_time_lines.get(ancestor, {})
-                    # print(f"  ancestor={ancestor!r}: {len(ancestor_data)} file(s) in import_time_lines")
-                    for target_file, lines in ancestor_data.items():
-                        # print(f"    -> {target_file}: lines={sorted(lines)}")
-                        existing_file = cov_data.get(target_file, {})
-                        target_file_data = new_data.setdefault(target_file, {})
-                        for line in lines:
-                            if not existing_file.get(line):
-                                target_file_data[line] = import_tests
-                                projected_new_tests = True
-
-        # Merge accumulated data into py_files (done outside the loop to
-        # avoid mutating the dict while iterating over it)
-        for target_file, file_data in new_data.items():
-            existing = cov_data.setdefault(target_file, {})
-            for line, tests in file_data.items():
-                existing.setdefault(line, set()).update(tests)
-
-        if not projected_new_tests:
-            break
+            # (b) ancestor packages — importing a submodule runs each ancestor __init__.py
+            parts = dotpath.split(".")
+            for depth in range(1, len(parts)):
+                ancestor = ".".join(parts[:depth])
+                anc_relpath = _module_relpath(ancestor, ast_data)
+                if anc_relpath is not None:
+                    anc_pdata = ast_data.files[anc_relpath]
+                    added += _propagate(cov_data.setdefault(anc_relpath, {}),
+                                        import_time_lines(anc_pdata), tests)
+    return added
 
 
 def _src_line(relf, lineno, _src_cache, folder):

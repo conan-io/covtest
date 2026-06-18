@@ -48,9 +48,9 @@ BREAKING_CHANGES = [
     {
         "id": "break_regex",
         "file": "django/utils/http.py",
-        "line": 376,
-        "original": '        disposition = "attachment" if as_attachment else "inline"\n',
-        "replacement": "        \n",
+        "line": 51,
+        "original": '        query = query.lists()\n',
+        "replacement": "        kk\n",
         "description": "Breaking regex_helper.py",
     }
 ]

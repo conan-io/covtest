@@ -217,6 +217,36 @@ def test_parse_imports_local():
     assert not hasattr(parsed, 'local_import_sources')
 
 
+def test_import_bindings():
+    """import_bindings maps each bound name to (dotpath, original_name, is_module, lines, sole_name)."""
+    src = textwrap.dedent("""\
+        from someglobal.somemodule import something
+        from data import cities, countries
+        import another.module
+        import os as system
+        """)
+    parsed = _ParsedFileData(src)
+    assert parsed.import_bindings == {
+        # from-import, single name on its line → sole_name True
+        "something": ("someglobal.somemodule", "something", False, [1], True),
+        # two names share line 2 → sole_name False for both
+        "cities": ("data", "cities", False, [2], False),
+        "countries": ("data", "countries", False, [2], False),
+        # "import a.b.c" binds the top name "a"; whole-module import
+        "another": ("another.module", "another.module", True, [3], True),
+        # aliased module import binds the alias
+        "system": ("os", "os", True, [4], True),
+    }
+
+
+def test_import_bindings_relative_resolved():
+    """Relative imports resolve the dotpath using the file's rel path."""
+    parsed = _ParsedFileData("from .util import compute\n", relf="mypkg/__init__.py")
+    assert parsed.import_bindings == {
+        "compute": ("mypkg.util", "compute", False, [1], True),
+    }
+
+
 def test_python_parsed_scopes():
     src = textwrap.dedent("""\
         def myfunc():

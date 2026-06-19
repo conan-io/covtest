@@ -136,14 +136,15 @@ def suite_to_run(covdata, diff_result, folder):
                     if not containing:
                         continue
                     # Innermost scope — smallest range
-                    inner_start, inner_end = min(containing,
-                                                  key=lambda s: s[1] - s[0])
+                    inner_start, inner_end = min(containing, key=lambda s: s[1] - s[0])
                     # Lines after the insertion point up to the scope end.
                     # Tests covering those lines can actually reach the new code.
                     for line in range(old_pos + 1, inner_end + 1):
                         tests = m.get(line, ())
-                        out_verbose(f"      {filename}:{line} (inserted scope) => {tests}")
-                        result.update(t for t in tests if t)
+                        if tests:
+                            out_verbose(f"      {filename}:{line} (inserted scope) => {tests}")
+                            result.update(t for t in tests if t)
+                            break
 
         # New tests in test files that didn't exist in the snapshot
         # TODO: Better filtering of test files, in case some production code is named "test"
@@ -328,4 +329,3 @@ def predict_tests(project_folder, base_commit):
 
     out_verbose(f"total            : {time.time() - t0:5.1f}s")
     return tests
-

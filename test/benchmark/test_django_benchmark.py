@@ -46,12 +46,12 @@ BREAKING_CHANGES = [
         "description": "Breaking the utils tree negate",
     },
     {
-        "id": "break_regex",
-        "file": "django/utils/http.py",
-        "line": 51,
-        "original": '        query = query.lists()\n',
+        "id": "break_db",
+        "file": "django/db/backends/utils.py",
+        "line": 19,
+        "original": '        self.cursor = cursor\n',
         "replacement": "        kk\n",
-        "description": "Breaking regex_helper.py",
+        "description": "Breaking DB",
     }
 ]
 

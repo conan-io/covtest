@@ -8,8 +8,14 @@ Each test calls _run_projection(files, coverage_data) which:
 
 This lets each projection pass be verified in isolation by crafting
 minimal source files and coverage data, without running a full pytest suite.
+
+Coverage data conventions (matching how the .coverage DB reports execution):
+  line: set()        — line was executed (e.g. at module import time) but with no test context
+  line: {test, ...}  — line was executed inside a specific test
+  line absent        — line was never executed; must NEVER receive test attribution
 """
 
+from covtest.ast_mappings import _propagate, file_scopes_down_projection
 from covtest.ast_parser import ParsedData
 from covtest.covtest_data import CovTestData
 from test.e2e.client import TestClient
@@ -22,6 +28,36 @@ def _run_projection(files, coverage_data):
     parse_data = ParsedData(tc.cwd, list(files.keys()))
     result = CovTestData.create(coverage_data, parse_data, None)
     return result.py_files
+
+
+class TestCoverageUniverseInvariant:
+    """Lines absent from raw coverage must never receive test attribution,
+    regardless of what the projection logic would otherwise compute.
+    """
+
+    def test_propagate_skips_uncovered_lines(self):
+        """_propagate must not create entries for lines absent from test_data."""
+        test_data = {3: set()}  # line 3 covered (empty); line 5 never executed
+        _propagate(test_data, [3, 5], {"test_A"})
+        assert test_data == {3: {"test_A"}}  # line 5 must NOT appear
+
+    def test_scopes_down_does_not_project_into_uncovered_body(self):
+        """If body lines are absent from coverage, scopes-down must not fill them."""
+        class _FakeAst:
+            scopes = {1: 3}  # scope: line 1 to line 3
+
+        file_cov = {1: {"test_A"}}  # def line has tests; body lines 2-3 never executed
+        file_scopes_down_projection(file_cov, _FakeAst())
+        assert file_cov == {1: {"test_A"}}  # lines 2 and 3 must NOT appear
+
+    def test_scopes_down_projects_into_covered_empty_body(self):
+        """Body lines that are covered but empty (import-time execution) should be filled."""
+        class _FakeAst:
+            scopes = {1: 3}  # scope: line 1 to line 3
+
+        file_cov = {1: {"test_A"}, 2: set(), 3: set()}  # body ran at import, no test context
+        file_scopes_down_projection(file_cov, _FakeAst())
+        assert file_cov == {1: {"test_A"}, 2: {"test_A"}, 3: {"test_A"}}
 
 
 class TestScopeProjection:
@@ -201,9 +237,15 @@ class TestImportProjection:
             "def test_result():\n"               # line 1
             "    from mymodule import RESULT\n"  # line 2 — local import
         )
+        # mymodule.py is imported at line 2 of test_mymodule.py.  When imported,
+        # Python executes lines 1 (def), 2 (body — compute is called at line 4),
+        # and 4 (RESULT = compute(5)), all with no test context.
         py = _run_projection(
             {"mymodule.py": module_code, "test_mymodule.py": test_code},
-            {"test_mymodule.py": {2: {"test_result"}}},
+            {
+                "mymodule.py": {1: set(), 2: set(), 4: set()},
+                "test_mymodule.py": {2: {"test_result"}},
+            },
         )
         assert py["mymodule.py"][1] == {"test_result"}  # def line
         assert py["mymodule.py"][2] == {"test_result"}  # body line — the key assertion
@@ -287,9 +329,16 @@ class TestImportProjection:
                 "    from pkg.leaf import LEAF\n"  # line 2
             ),
         }
+        # Importing pkg.leaf runs pkg/__init__.py (lines 1-2) which calls compute(),
+        # so pkg/util.py lines 1-2 also execute — all at import time, no test context.
         py = _run_projection(
             files,
-            {"test_pkg.py": {2: {"test_leaf"}}},
+            {
+                "pkg/__init__.py": {1: set(), 2: set()},
+                "pkg/util.py": {1: set(), 2: set()},
+                "pkg/leaf.py": {1: set()},
+                "test_pkg.py": {2: {"test_leaf"}},
+            },
         )
         # ancestor pkg/__init__ ran compute() → util.compute body attributed to test_leaf
         assert py["pkg/util.py"][2] == {"test_leaf"}
@@ -319,9 +368,15 @@ class TestImportProjection:
                 "    assert RESULT == 7\n"        # line 3
             ),
         }
+        # Importing pkg runs pkg/__init__.py (line 1), which imports pkg.sub,
+        # running sub.py lines 1-2 — all at import time, no test context.
         py = _run_projection(
             files,
-            {"test_pkg.py": {2: {"test_x"}, 3: {"test_x"}}},
+            {
+                "pkg/__init__.py": {1: set()},
+                "pkg/sub.py": {1: set(), 2: set()},
+                "test_pkg.py": {2: {"test_x"}, 3: {"test_x"}},
+            },
         )
         # RESULT's definition in sub.py is reached through the re-export
         assert py["pkg/sub.py"][2] == {"test_x"}

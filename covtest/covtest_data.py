@@ -71,16 +71,11 @@ class CovTestData:
                 parsed_file_data = parse_data.files.get(file)
                 if parsed_file_data is None:
                     continue
-                for name, usage_lines_ in parsed_file_data.global_usages.items():
-                    if name == "urlencode":
-                        print("GLOBAL USAGE urlencode", file, " in lines", usage_lines_)
-                for name, usage_lines_ in parsed_file_data.imports_usages.items():
-                    if name == "urlencode":
-                        print("IMPORT USAGE urlencode", file, " in lines", usage_lines_)
                 delta += project_global_usages(test_data, parsed_file_data)
                 delta += project_imports_in_file(test_data, parsed_file_data)
                 delta += file_scopes_down_projection(test_data, parsed_file_data)
 
+            print_cov_data(self.py_files, folder, "after local in-file projections")
             delta += project_imports(self.py_files, parse_data)
 
             if not delta:

@@ -244,7 +244,7 @@ def get_broken_tests(
         subprocess.run(
             cmd,
             cwd=repo_dir,
-            # capture_output=True,
+            capture_output=True,
             text=True,
             timeout=wall_timeout,
         )

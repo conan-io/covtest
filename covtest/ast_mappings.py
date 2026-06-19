@@ -17,12 +17,13 @@ def file_scopes_up_projection(file_cov_data, file_ast_data):
 
 
 def file_scopes_down_projection(file_cov_data, file_ast_data):
-    """ When a function or class declaration has tests information, but its inner
-    scope is completely blank, it got it from import/global projection.
-    It can project those tests from the declaration to the inner scope.
+    """When a function or class declaration has tests but its executed body lines
+    are still empty, project those tests down into the body.
 
-    Returns the number of newly-added (line, test) attributions so callers can
-    detect a fixpoint.
+    Only lines already present in file_cov_data (executed, with empty test sets)
+    are eligible — lines absent from coverage (never executed) are never touched.
+
+    Returns the number of newly-added (line, test) attributions.
     """
     new_data = {}
     for line, tests in file_cov_data.items():
@@ -30,10 +31,11 @@ def file_scopes_down_projection(file_cov_data, file_ast_data):
             continue
         endline = file_ast_data.scopes.get(line)
         if endline and endline > line:
-            if not any(file_cov_data.get(lin) for lin in range(line + 1, endline + 1)):
-                for ln_ in range(line + 1, endline + 1):
-                    assert not file_cov_data.get(ln_)
-                    new_data[ln_] = tests
+            body_covered = [ln for ln in range(line + 1, endline + 1)
+                            if ln in file_cov_data]
+            if body_covered and not any(file_cov_data[ln] for ln in body_covered):
+                for ln in body_covered:
+                    new_data[ln] = tests
 
     added = 0
     for k, v in new_data.items():
@@ -55,15 +57,21 @@ def _collect_tests(test_data_, lines_):
 
 
 def _propagate(test_data_, lines_, tests_):
-    """Add *tests* to every line in *lines_*, creating entries as needed."""
+    """Add *tests* to lines in *lines_* that are already in *test_data_*.
+
+    Lines absent from test_data_ (never executed) are skipped — the coverage
+    universe is never expanded by projection.
+    """
     if not lines_ or not tests_:
         return 0
     updated = 0
     for line_ in lines_:
-        tests_to_update = test_data_.setdefault(line_, set())
-        old_lines = len(tests_to_update)
+        if line_ not in test_data_:
+            continue
+        tests_to_update = test_data_[line_]
+        old_size = len(tests_to_update)
         tests_to_update.update(tests_)
-        updated += len(tests_to_update) - old_lines
+        updated += len(tests_to_update) - old_size
     return updated
 
 
@@ -149,7 +157,6 @@ def project_imports(cov_data, ast_data):
             continue
         for bound_name, binding in parsed_file_data.import_bindings.items():
             dotpath, original_name, is_module, lines, sole_name = binding
-
             # Per-name usage tests (contamination-free): tests on lines where the
             # bound name is actually used.  usage_names is keyed by bare name.
             tests = set(_collect_tests(file_cov, parsed_file_data.usage_names.get(bound_name)) or ())
@@ -207,14 +214,15 @@ def _src_line(relf, lineno, _src_cache, folder):
 
 
 def print_cov_data(cov_data, folder, label):
+    return
     _src_cache = {}
     print(f"\n=== DIAG _extend_mappings: {label} ===")
     for f_, td in sorted(cov_data.items()):
-        if "/http.py" not in f_:
-            continue
         if not td:
             continue
         print(f"  {f_}:")
         for ln__, ts_ in sorted(td.items()):
+            if not ts_:
+                continue
             code = _src_line(f_, ln__, _src_cache, folder)
-            print(f"    {ln__:3d}: {code:<50}  {sorted(ts_)}")
+            print(f"    {ln__:3d}: {code:<50}  {list(ts_)[:1]}")

@@ -380,3 +380,66 @@ class TestImportProjection:
         )
         # RESULT's definition in sub.py is reached through the re-export
         assert py["pkg/sub.py"][2] == {"test_x"}
+
+
+class TestMultilineStatementProjection:
+    """A multi-line statement (e.g. ``TEMPLATE = textwrap.dedent(\"\"\"...\"\"\")``)
+    is reported by coverage as a single executed line — the first one — even
+    though the AST spans several lines.  Projection must spread the tests
+    attributed to that first line across every line the statement occupies,
+    so a diff that modifies any inner line still selects the covering tests.
+    """
+
+    def test_multiline_dedent_assign_projects_to_all_its_lines(self):
+        code = (
+            "import textwrap\n"                     # line 1
+            "def use_template():\n"                 # line 2
+            '    mytemplate = textwrap.dedent("""\n'  # line 3
+            "        hello\n"                       # line 4
+            "        world\n"                       # line 5
+            '        """)\n'                        # line 6
+        )
+        # Coverage only records the first line of the multi-line assignment
+        # (line 3); lines 4-6 never appear in the raw coverage dict.
+        py = _run_projection(
+            {"src.py": code},
+            {"src.py": {1: set(), 2: set(), 3: {"test_foo"}}},
+        )
+        # After projection, every line the assignment occupies carries test_foo.
+        for line in (3, 4, 5, 6):
+            assert py["src.py"].get(line) == {"test_foo"}
+
+    def test_multiline_spread_after_cross_file_import_projection(self):
+        """The first line of the multi-line assignment has no tests in raw
+        coverage — tests reach it via cross-file import projection.  The
+        multi-line projection must still spread those tests to every inner
+        line, which requires it to run inside the fixpoint loop (not only
+        during seeding).
+        """
+        src_code = (
+            "import textwrap\n"                       # line 1
+            'TEMPLATE = textwrap.dedent("""\n'        # line 2
+            "    hello\n"                             # line 3
+            "    world\n"                             # line 4
+            '    """)\n'                              # line 5
+        )
+        test_code = (
+            "from src import TEMPLATE\n"              # line 1
+            "def test_template():\n"                  # line 2
+            '    assert "hello" in TEMPLATE\n'        # line 3
+        )
+        # src.py runs at import time — only lines 1, 2 fire in coverage,
+        # both with no test context.  Lines 3-5 are inside the string literal
+        # and never appear in the raw coverage dict.
+        py = _run_projection(
+            {"src.py": src_code, "test_src.py": test_code},
+            {
+                "src.py": {1: set(), 2: set()},
+                "test_src.py": {3: {"test_template"}},
+            },
+        )
+        # Cross-file import projection attributes test_template to TEMPLATE's
+        # def line (line 2 of src.py); the multi-line projection then spreads
+        # it to lines 3, 4, 5.
+        for line in (2, 3, 4, 5):
+            assert py["src.py"].get(line) == {"test_template"}

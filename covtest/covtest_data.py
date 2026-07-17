@@ -5,7 +5,7 @@ import msgpack
 
 from covtest.ast_mappings import file_scopes_up_projection, print_cov_data, \
     project_global_usages, project_imports_in_file, project_imports, \
-    file_scopes_down_projection
+    project_multiline_statements, file_scopes_down_projection
 from covtest.errors import CovTestException
 
 
@@ -74,6 +74,7 @@ class CovTestData:
                 delta += project_global_usages(test_data, parsed_file_data)
                 delta += project_imports_in_file(test_data, parsed_file_data)
                 delta += file_scopes_down_projection(test_data, parsed_file_data)
+                delta += project_multiline_statements(test_data, parsed_file_data)
 
             print_cov_data(self.py_files, folder, "after local in-file projections")
             delta += project_imports(self.py_files, parse_data)

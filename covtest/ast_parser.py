@@ -47,26 +47,44 @@ class _ParsedFileData:
     def __init__(self, code, relf=""):
         rootnode = ast.parse(code)
         # Mapping from line to the end line of the current scope (class, function)
-        self.scopes, self.usage_names = self._get_usages(rootnode)
+        self.scopes, self.usage_names, self.statement_lines = self._get_usages(rootnode)
         self.imports, self.import_sources, self.import_bindings = self._parse_imports(rootnode, relf)
         self.imports_usages = self._parse_usages(self.usage_names, self.imports)
         self.global_objects, self.global_declarations, self.global_calls = self._parse_globals_defs(rootnode)
         all_globals = {**self.global_objects, **self.global_declarations}
         self.global_usages = self._parse_usages(self.usage_names, all_globals)
 
-    @staticmethod
-    def _get_usages(rootnode):
+    # Statement types that contain their own body scopes — excluded from
+    # statement_lines because their inner lines are handled by scope projection.
+    # ast.Match (3.10+) and ast.TryStar (3.11+) are looked up defensively so the
+    # module still loads on Python 3.9, where those attributes don't exist yet.
+    _BLOCK_STMTS = tuple(t for t in (getattr(ast, name, None) for name in (
+        "FunctionDef", "AsyncFunctionDef", "ClassDef",
+        "If", "For", "AsyncFor", "While",
+        "With", "AsyncWith", "Try", "TryStar", "Match",
+    )) if t is not None)
+
+    @classmethod
+    def _get_usages(cls, rootnode):
         usage_names = {}
         scopes = {}
+        # Extents of multi-line simple statements — coverage only fires on the
+        # first line; projection spreads tests across the rest.
+        statement_lines = {}
         for node in ast.walk(rootnode):
             start, end = getattr(node, "lineno", None), getattr(node, "end_lineno", None)
             if start is not None:
                 end = max(end, scopes.get(start, 0))
                 if start < end:
                     scopes[start] = int(end)
+            if (isinstance(node, ast.stmt) and not isinstance(node, cls._BLOCK_STMTS)
+                    and node.end_lineno and node.end_lineno > node.lineno):
+                cur = statement_lines.get(node.lineno, 0)
+                if node.end_lineno > cur:
+                    statement_lines[node.lineno] = int(node.end_lineno)
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 usage_names.setdefault(node.id, set()).add(node.lineno)
-        return scopes, usage_names
+        return scopes, usage_names, statement_lines
 
     @staticmethod
     def _parse_globals_defs(rootnode):

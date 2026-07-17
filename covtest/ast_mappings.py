@@ -16,6 +16,30 @@ def file_scopes_up_projection(file_cov_data, file_ast_data):
                 tests.update(lin_tests)
 
 
+def project_multiline_statements(file_cov_data, file_ast_data):
+    """Coverage records only the first line of a multi-line simple statement
+    (e.g. ``x = textwrap.dedent(\"\"\"...\"\"\")``).  Spread the first-line tests
+    across every line the statement occupies so a diff touching any inner line
+    still selects the covering tests.  Returns the number of newly-added
+    attributions so it can participate in the outer fixpoint.
+    """
+    added = 0
+    for start, end in file_ast_data.statement_lines.items():
+        tests = file_cov_data.get(start)
+        if not tests:
+            continue
+        for line in range(start + 1, end + 1):
+            existing = file_cov_data.get(line)
+            if existing is None:
+                file_cov_data[line] = set(tests)
+                added += len(tests)
+            else:
+                before = len(existing)
+                existing.update(tests)
+                added += len(existing) - before
+    return added
+
+
 def file_scopes_down_projection(file_cov_data, file_ast_data):
     """When a function or class declaration has tests but its executed body lines
     are still empty, project those tests down into the body.
